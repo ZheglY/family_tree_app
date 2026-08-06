@@ -1,14 +1,15 @@
 package main
 
 import (
-	"context"
-	"os/signal"
-	"syscall"
+    "context"
+    "os/signal"
+    "syscall"
 
-	healthrepository "github.com/ZheglY/family_tree_app/internal/core/features/health/repository"
-	healthservice "github.com/ZheglY/family_tree_app/internal/core/features/health/service"
-	healthhttp "github.com/ZheglY/family_tree_app/internal/core/features/health/transport"
-	"github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
+    healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
+    healthservice "github.com/ZheglY/family_tree_app/internal/features/health/service"
+    healthhttp "github.com/ZheglY/family_tree_app/internal/features/health/transport"
+
+    "github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
 )
 
 func main() {
@@ -60,5 +61,15 @@ func main() {
 находит зарегистрированный префикс /api/v1/ и передаёт запрос 
 обработчику, созданному через StripPrefix. 
 StripPrefix удаляет из пути /api/v1, после чего получается 
-POST /health, и передаёт изменённый запрос в APIVersionRouter. Встроенный в него ServeMux ищет сохранённый маршрут POST /health, находит связанный с ним handler h.GetHealth и вызывает его для обработки запроса.
+POST /health, и передаёт изменённый запрос в APIVersionRouter. 
+Встроенный в него ServeMux ищет сохранённый маршрут 
+POST /health, находит связанный с ним handler h.GetHealth и 
+вызывает его для обработки запроса.
+*/
+
+
+/*
+1. Дописать фитчу юзерс
+2. добавить логирование
+3. разобраться с OpenAPI и swagger
 */
