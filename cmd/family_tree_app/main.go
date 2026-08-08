@@ -1,15 +1,19 @@
 package main
 
 import (
-    "context"
-    "os/signal"
-    "syscall"
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
-    healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
-    healthservice "github.com/ZheglY/family_tree_app/internal/features/health/service"
-    healthhttp "github.com/ZheglY/family_tree_app/internal/features/health/transport"
+	healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
+	healthservice "github.com/ZheglY/family_tree_app/internal/features/health/service"
+	healthhttp "github.com/ZheglY/family_tree_app/internal/features/health/transport"
+	"go.uber.org/zap"
 
-    "github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
+	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
 )
 
 func main() {
@@ -26,10 +30,21 @@ func main() {
 	defer stop() //Гарантирует освобождение ресурсов которые 
 	// signal.NotifyContext использует для подписки на сигналы.
 
+	loggerConfig := logger.NewConfigMust()
+	// Создает логер при запуске приложения
+	log, err := logger.NewLogger(loggerConfig)
+	if err != nil {
+		fmt.Println("failed to init logger:", err)
+		os.Exit(1) // Приложение немедленно завершается с кодом ошибки 1.
+	}
+	defer log.Close() 
+
+	log.Debug("initializing features", zap.String("feature", "health"))
 	healthRepository := healthrepository.NewHealthRepository("pool")
 	healthService := healthservice.NewHealthService(healthRepository)
 	healthTransportHTTP := healthhttp.NewHealthHTTPHandler(healthService)
 
+	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
 	httpServer := server.NewHTTPServer(
 		server.NewConfigMust(),
