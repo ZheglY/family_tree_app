@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/signal"
 	"syscall"
 
-	healthrepository "github.com/ZheglY/family_tree_app/internal/core/features/health/repository"
-	healthservice "github.com/ZheglY/family_tree_app/internal/core/features/health/service"
-	healthhttp "github.com/ZheglY/family_tree_app/internal/core/features/health/transport"
+	healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
+	healthservice "github.com/ZheglY/family_tree_app/internal/features/health/service"
+	healthhttp "github.com/ZheglY/family_tree_app/internal/features/health/transport"
+	"go.uber.org/zap"
+
+	"github.com/ZheglY/family_tree_app/internal/core/logger"
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
 )
 
@@ -25,10 +30,21 @@ func main() {
 	defer stop() //Гарантирует освобождение ресурсов которые 
 	// signal.NotifyContext использует для подписки на сигналы.
 
+	loggerConfig := logger.NewConfigMust()
+	// Создает логер при запуске приложения
+	log, err := logger.NewLogger(loggerConfig)
+	if err != nil {
+		fmt.Println("failed to init logger:", err)
+		os.Exit(1) // Приложение немедленно завершается с кодом ошибки 1.
+	}
+	defer log.Close() 
+
+	log.Debug("initializing features", zap.String("feature", "health"))
 	healthRepository := healthrepository.NewHealthRepository("pool")
 	healthService := healthservice.NewHealthService(healthRepository)
 	healthTransportHTTP := healthhttp.NewHealthHTTPHandler(healthService)
 
+	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
 	httpServer := server.NewHTTPServer(
 		server.NewConfigMust(),
@@ -60,5 +76,15 @@ func main() {
 находит зарегистрированный префикс /api/v1/ и передаёт запрос 
 обработчику, созданному через StripPrefix. 
 StripPrefix удаляет из пути /api/v1, после чего получается 
-POST /health, и передаёт изменённый запрос в APIVersionRouter. Встроенный в него ServeMux ищет сохранённый маршрут POST /health, находит связанный с ним handler h.GetHealth и вызывает его для обработки запроса.
+POST /health, и передаёт изменённый запрос в APIVersionRouter. 
+Встроенный в него ServeMux ищет сохранённый маршрут 
+POST /health, находит связанный с ним handler h.GetHealth и 
+вызывает его для обработки запроса.
+*/
+
+
+/*
+1. Дописать фитчу юзерс
+2. добавить логирование
+3. разобраться с OpenAPI и swagger
 */
