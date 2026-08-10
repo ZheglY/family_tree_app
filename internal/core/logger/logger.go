@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,6 +30,14 @@ var (
 type Logger struct {
 	*zap.Logger
 	file *os.File
+}
+
+func ToContext(ctx context.Context, log *Logger) context.Context {
+	return context.WithValue(
+		ctx,
+		key,
+		log,
+	)
 }
 
 // Функция создаёт logger, который одновременно пишет 
