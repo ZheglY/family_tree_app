@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
 )
 
@@ -48,6 +49,8 @@ func main() {
 	// создаем адаптер сервера
 	httpServer := server.NewHTTPServer(
 		server.NewConfigMust(),
+		log,
+		middleware.Logger(log),
 	)
 
 	/* 

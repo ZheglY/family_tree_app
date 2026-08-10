@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
 )
 
 /* Структура сервера
@@ -14,6 +17,8 @@ Config - конфиг с указанием порта и SHUTDOWN
 type HTTPServer struct {
 	mux *http.ServeMux
 	config Config
+	log *logger.Logger
+	middleware []middleware.Middleware
 }
 
 /*
@@ -27,10 +32,14 @@ HTTP-мультиплексор:
 */
 func NewHTTPServer(
 	config Config,
+	log *logger.Logger,
+	middleware ...middleware.Middleware,
 ) *HTTPServer {
 	return &HTTPServer{
 		mux: http.NewServeMux(),
 		config: config,
+		log: log,
+		middleware: middleware,
 	}
 }
 

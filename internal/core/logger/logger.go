@@ -113,6 +113,13 @@ func NewLogger(config LoggerConfig) (*Logger, error) {
 
 }
 
+func (l *Logger) With(field ...zap.Field) *Logger {
+	return &Logger{
+		Logger: l.Logger.With(field...),
+		file: l.file,
+	}
+}
+
 func (l *Logger) Close() {
 	if err := l.file.Close(); err != nil {
 		fmt.Println("failed to close logger", err)
