@@ -34,7 +34,7 @@ func ChainMiddleware(
 	return h
 }
 
-func RequestID(ctx context.Context) Middleware {
+func RequestID() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(
 			func(rw http.ResponseWriter, r *http.Request) {
@@ -71,5 +71,16 @@ func Logger(log *logger.Logger) Middleware {
 				// Копия запроса передаётся следующему handler
 				next.ServeHTTP(rw, requestWithLogger)
 			})
+	}
+}
+
+func Trace(ctx context.Context, log *logger.Logger) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(
+			func(rw http.ResponseWriter, r *http.Request) {
+
+				next.ServeHTTP(rw, r)
+			},
+		)
 	}
 }

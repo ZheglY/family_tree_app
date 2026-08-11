@@ -50,6 +50,7 @@ func main() {
 	httpServer := server.NewHTTPServer(
 		server.NewConfigMust(),
 		log,
+		middleware.RequestID(),
 		middleware.Logger(log),
 	)
 

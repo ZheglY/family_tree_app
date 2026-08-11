@@ -53,7 +53,7 @@ func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 
 		s.mux.Handle(
 			prefix+"/",
-			http.StripPrefix(prefix, router), // обрезает путь и привязывает роутер к пути
+			http.StripPrefix(prefix, router.WithMiddleware()), // обрезает путь и привязывает роутер к пути
 		)
 	}
 }
