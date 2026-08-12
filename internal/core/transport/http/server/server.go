@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
 )
 
 /* Структура сервера
@@ -14,6 +17,8 @@ Config - конфиг с указанием порта и SHUTDOWN
 type HTTPServer struct {
 	mux *http.ServeMux
 	config Config
+	log *logger.Logger
+	middleware []middleware.Middleware
 }
 
 /*
@@ -27,16 +32,21 @@ HTTP-мультиплексор:
 */
 func NewHTTPServer(
 	config Config,
+	log *logger.Logger,
+	middleware ...middleware.Middleware,
 ) *HTTPServer {
 	return &HTTPServer{
 		mux: http.NewServeMux(),
 		config: config,
+		log: log,
+		middleware: middleware,
 	}
 }
 
 /* 
 При регистрации роутеров проходимся циклом по apiVersionRouters
-У каждго роутера формируем префикс и 
+У каждго роутера формируем префикс и привязываем все мидлвари
+после этого передаем итерацию след apiVersionRouter
 */ 
 func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 	for _, router := range routers {
@@ -44,12 +54,13 @@ func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 
 		s.mux.Handle(
 			prefix+"/",
-			http.StripPrefix(prefix, router), // обрезает путь и привязывает роутер к пути
+			http.StripPrefix(prefix, router.WithMiddleware()), // обрезает путь и привязывает роутер к пути
 		)
 	}
 }
 
 func (s *HTTPServer) Run(ctx context.Context) error {
+	mux := middleware.ChainMiddleware(s.mux, s.middleware...)
 	/*
 	server := &http.Server - создаётся сервер стандартной библиотеки:
 	Addr определяет адрес прослушивания, например :8080;
@@ -57,7 +68,7 @@ func (s *HTTPServer) Run(ctx context.Context) error {
 	*/
 	server := &http.Server{
 		Addr: s.config.Addr,
-		Handler: s.mux,
+		Handler: mux,
 	}
 
 	errCh := make(chan error, 1) // создаем канал ошибок
