@@ -32,14 +32,6 @@ type Logger struct {
 	file *os.File
 }
 
-func ToContext(ctx context.Context, log *Logger) context.Context {
-	return context.WithValue(
-		ctx,
-		key,
-		log,
-	)
-}
-
 // Функция создаёт logger, который одновременно пишет 
 // сообщения в консоль и в файл.
 func NewLogger(config LoggerConfig) (*Logger, error) {
@@ -113,6 +105,40 @@ func NewLogger(config LoggerConfig) (*Logger, error) {
 
 }
 
+// Кладет логгер в контекст
+func ToContext(ctx context.Context, log *Logger) context.Context {
+	return context.WithValue(
+		ctx, // существующий контекст
+		key, // ключ для поиска логера
+		log, // logger который мы хотим сохранить в контексте
+	)
+}
+
+// Достает логгер из контекста
+func FromContext(ctx context.Context) *Logger {
+	// Проверь, является ли полученное значение указателем *Logger. 
+	// Если да — верни его как *Logger.
+	log, ok := ctx.Value(key).(*Logger) // Это type assertion — утверждение типа.
+	if !ok {
+		panic("no logger in context")
+	}
+
+	return log
+}
+
+/*
+Создаётся производный logger, постоянно содержащий поля 
+текущего запроса:
+
+При добавлении таких ключ - значений:
+request_id = abc-123
+url        = /api/v1/health
+
+При вызове логера - Info("health check started")
+
+Вывод:
+INFO health check started request_id=abc-123 url=/api/v1/health
+*/
 func (l *Logger) With(field ...zap.Field) *Logger {
 	return &Logger{
 		Logger: l.Logger.With(field...),
@@ -120,6 +146,7 @@ func (l *Logger) With(field ...zap.Field) *Logger {
 	}
 }
 
+// Закрытие файла для логов
 func (l *Logger) Close() {
 	if err := l.file.Close(); err != nil {
 		fmt.Println("failed to close logger", err)

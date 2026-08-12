@@ -45,7 +45,8 @@ func NewHTTPServer(
 
 /* 
 При регистрации роутеров проходимся циклом по apiVersionRouters
-У каждго роутера формируем префикс и 
+У каждго роутера формируем префикс и привязываем все мидлвари
+после этого передаем итерацию след apiVersionRouter
 */ 
 func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 	for _, router := range routers {
@@ -59,6 +60,7 @@ func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 }
 
 func (s *HTTPServer) Run(ctx context.Context) error {
+	mux := middleware.ChainMiddleware(s.mux, s.middleware...)
 	/*
 	server := &http.Server - создаётся сервер стандартной библиотеки:
 	Addr определяет адрес прослушивания, например :8080;
@@ -66,7 +68,7 @@ func (s *HTTPServer) Run(ctx context.Context) error {
 	*/
 	server := &http.Server{
 		Addr: s.config.Addr,
-		Handler: s.mux,
+		Handler: mux,
 	}
 
 	errCh := make(chan error, 1) // создаем канал ошибок

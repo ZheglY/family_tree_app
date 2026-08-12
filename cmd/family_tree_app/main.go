@@ -52,6 +52,7 @@ func main() {
 		log,
 		middleware.RequestID(),
 		middleware.Logger(log),
+		middleware.Trace(),
 	)
 
 	/* 
@@ -66,6 +67,8 @@ func main() {
 	а внутренний mux выбирает конкретный маршрут и 
 	вызывает handler.
 	*/
+
+	// Здесь можно добавить мидлвари к конкретной api version
 	apiVersionRouter := server.NewAPIVersionRouter(server.ApiVersion1)
 	apiVersionRouter.RegisterRoutes(healthTransportHTTP.Routes()...)
 	httpServer.RegisterAPIRouters(apiVersionRouter)
@@ -84,6 +87,11 @@ POST /health, и передаёт изменённый запрос в APIVersio
 Встроенный в него ServeMux ищет сохранённый маршрут 
 POST /health, находит связанный с ним handler h.GetHealth и 
 вызывает его для обработки запроса.
+*/
+
+/*
+r.Handler - Это конечная функция маршрута - h.GetUser
+Он имеет тип - http.HandlerFunc
 */
 
 
