@@ -7,7 +7,7 @@ var (
 )
 
 /* 
-Структура обертканад http.ResponseWriter с дополнительным 
+Структура обертка над http.ResponseWriter с дополнительным 
 полем statusCode. Чтобы на выходе middleware Trace показывала
 статус код обработки запроса.
 */

@@ -129,18 +129,26 @@ func Trace() Middleware {
 	}
 }
 
-// func Recovery() Middleware {
-// 	return func(next http.Handler) http.Handler {
-// 		return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-// 			ctx := r.Context()
-// 			log := logger.FromContext(ctx)
-// 			responseWriter := 
+// middleware которая перехватывает неожиданный panic в 
+// последующих middleware или конечном handler, записывает 
+// информацию в лог и возвращает клиенту контролируемый ответ 500.
+func Recovery() Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			log := logger.FromContext(ctx)
+			responseHandler := response.NewHTTPResponseHandler(log, rw)
 
-// 			defer func() {
-// 				if p := recover(); p != nil {
-					
-// 				}
-// 			}
-// 		})
-// 	}
-// }
+			defer func() {
+				if p := recover(); p != nil {
+					responseHandler.PanicResponse(
+						p,
+						"during handler HTTP request got unexpected panic",
+					)
+				}
+			}()
+
+			next.ServeHTTP(rw, r)
+		})
+	}
+}
