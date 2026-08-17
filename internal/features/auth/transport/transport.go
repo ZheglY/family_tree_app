@@ -18,6 +18,9 @@ type AuthService interface {
 	Refresh(context.Context, service.RefreshCommand) (model.Session, error)
 	Logout(context.Context, string) error
 	LogoutAll(context.Context, uuid.UUID) (int64, error)
+	GetUser(context.Context, uuid.UUID) (model.User, error)
+	ListSessions(context.Context, uuid.UUID) ([]model.UserSession, error)
+	RevokeSession(context.Context, uuid.UUID, uuid.UUID) error
 }
 
 type Handler struct {
@@ -49,6 +52,24 @@ func (h *Handler) Routes() []server.Route {
 			Method:     http.MethodPost,
 			Path:       "/auth/logout-all",
 			Handler:    h.LogoutAll,
+			Middleware: []coremiddleware.Middleware{h.requireAccess},
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/users/me",
+			Handler:    h.GetMe,
+			Middleware: []coremiddleware.Middleware{h.requireAccess},
+		},
+		{
+			Method:     http.MethodGet,
+			Path:       "/users/me/sessions",
+			Handler:    h.ListSessions,
+			Middleware: []coremiddleware.Middleware{h.requireAccess},
+		},
+		{
+			Method:     http.MethodDelete,
+			Path:       "/users/me/sessions/{session_id}",
+			Handler:    h.RevokeSession,
 			Middleware: []coremiddleware.Middleware{h.requireAccess},
 		},
 	}

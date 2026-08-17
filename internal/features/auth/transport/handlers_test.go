@@ -23,6 +23,8 @@ type authServiceStub struct {
 	refreshedWith   string
 	logoutAllUserID uuid.UUID
 	revokedCount    int64
+	sessions        []model.UserSession
+	revokedSession  uuid.UUID
 	err             error
 }
 
@@ -62,6 +64,26 @@ func (s *authServiceStub) LogoutAll(
 ) (int64, error) {
 	s.logoutAllUserID = userID
 	return s.revokedCount, s.err
+}
+
+func (s *authServiceStub) GetUser(context.Context, uuid.UUID) (model.User, error) {
+	return s.session.User, s.err
+}
+
+func (s *authServiceStub) ListSessions(
+	context.Context,
+	uuid.UUID,
+) ([]model.UserSession, error) {
+	return s.sessions, s.err
+}
+
+func (s *authServiceStub) RevokeSession(
+	_ context.Context,
+	_ uuid.UUID,
+	sessionID uuid.UUID,
+) error {
+	s.revokedSession = sessionID
+	return s.err
 }
 
 func TestLoginSetsProtectedRefreshCookieWithoutLeakingTokenInJSON(t *testing.T) {
@@ -159,6 +181,63 @@ func TestRegisterRejectsUnknownJSONField(t *testing.T) {
 	recorder := serveHandler(handler.Register, request)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", recorder.Code)
+	}
+}
+
+func TestListSessionsMarksCurrentSession(t *testing.T) {
+	currentSessionID := uuid.New()
+	serviceStub := &authServiceStub{
+		session: testSession(),
+		sessions: []model.UserSession{
+			{ID: currentSessionID, UserAgent: "current browser", CreatedAt: time.Now(), LastUsedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)},
+			{ID: uuid.New(), UserAgent: "other browser", CreatedAt: time.Now(), LastUsedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)},
+		},
+	}
+	handler := testHandler(t, serviceStub)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/users/me/sessions", nil)
+	request = request.WithContext(access.NewPrincipalContext(
+		request.Context(),
+		access.Principal{UserID: serviceStub.session.User.ID, SessionID: currentSessionID},
+	))
+	recorder := serveHandler(handler.ListSessions, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+	var body sessionsResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&body); err != nil {
+		t.Fatalf("decode sessions response: %v", err)
+	}
+	if len(body.Items) != 2 || !body.Items[0].Current || body.Items[1].Current {
+		t.Fatalf("sessions response = %#v", body.Items)
+	}
+}
+
+func TestRevokeCurrentSessionClearsRefreshCookie(t *testing.T) {
+	currentSessionID := uuid.New()
+	serviceStub := &authServiceStub{session: testSession()}
+	handler := testHandler(t, serviceStub)
+	request := httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/users/me/sessions/"+currentSessionID.String(),
+		nil,
+	)
+	request.SetPathValue("session_id", currentSessionID.String())
+	request = request.WithContext(access.NewPrincipalContext(
+		request.Context(),
+		access.Principal{UserID: serviceStub.session.User.ID, SessionID: currentSessionID},
+	))
+	recorder := serveHandler(handler.RevokeSession, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+	if serviceStub.revokedSession != currentSessionID {
+		t.Fatalf("revoked session = %s, want %s", serviceStub.revokedSession, currentSessionID)
+	}
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cleared cookies = %#v", cookies)
 	}
 }
 

@@ -39,6 +39,9 @@ type IdentityGateway interface {
 	Logout(context.Context, string) error
 	LogoutAll(context.Context, uuid.UUID) (int64, error)
 	GetAccessTokenKey(context.Context) (model.AccessTokenKey, error)
+	GetUser(context.Context, uuid.UUID) (model.User, error)
+	ListSessions(context.Context, uuid.UUID) ([]model.UserSession, error)
+	RevokeSession(context.Context, uuid.UUID, uuid.UUID) error
 }
 
 type AuthService struct {
@@ -92,4 +95,26 @@ func (s *AuthService) GetAccessTokenKey(
 	ctx context.Context,
 ) (model.AccessTokenKey, error) {
 	return s.identity.GetAccessTokenKey(ctx)
+}
+
+func (s *AuthService) GetUser(
+	ctx context.Context,
+	userID uuid.UUID,
+) (model.User, error) {
+	return s.identity.GetUser(ctx, userID)
+}
+
+func (s *AuthService) ListSessions(
+	ctx context.Context,
+	userID uuid.UUID,
+) ([]model.UserSession, error) {
+	return s.identity.ListSessions(ctx, userID)
+}
+
+func (s *AuthService) RevokeSession(
+	ctx context.Context,
+	userID uuid.UUID,
+	sessionID uuid.UUID,
+) error {
+	return s.identity.RevokeSession(ctx, userID, sessionID)
 }

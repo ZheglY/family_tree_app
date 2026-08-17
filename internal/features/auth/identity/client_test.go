@@ -77,6 +77,30 @@ func (s identityAPIStub) GetAccessTokenPublicKey(
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
+func (s identityAPIStub) GetUser(
+	context.Context,
+	*identityv1.GetUserRequest,
+	...grpc.CallOption,
+) (*identityv1.GetUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (s identityAPIStub) ListSessions(
+	context.Context,
+	*identityv1.ListSessionsRequest,
+	...grpc.CallOption,
+) (*identityv1.ListSessionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (s identityAPIStub) RevokeSession(
+	context.Context,
+	*identityv1.RevokeSessionRequest,
+	...grpc.CallOption,
+) (*identityv1.RevokeSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
 func TestClientLoginMapsSessionAndPropagatesRequestMetadata(t *testing.T) {
 	userID := uuid.New()
 	now := time.Now().UTC().Truncate(time.Second)

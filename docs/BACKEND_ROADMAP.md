@@ -840,6 +840,8 @@ JSON schema должна иметь собственную версию. Имп�
 - Family API содержит gRPC client с deadline и request ID, публичные HTTP auth endpoints, защищённую refresh-cookie и локальную проверку Ed25519 access token;
 - auth-срез проверяется unit-, repository-, gRPC- и PostgreSQL integration-тестами.
 
-До полного завершения Этапа 3 остаются `GET /users/me`, смена и восстановление пароля с отзывом сессий, rate limit, production mailer и аутентифицированный gRPC transport. PostgreSQL семейного домена и S3 ещё не подключены; они не должны использовать базу Identity Service.
+Family API также реализует `GET /users/me`, список активных сессий и отзыв выбранной сессии с обязательной проверкой владельца в Identity Service.
 
-Следующий малый вертикальный срез: `GET /users/me` и управление текущими сессиями, после чего — смена/восстановление пароля и rate limiting. Затем можно переходить к Этапу 4: `FamilyTree`, `TreeMember` и обязательная tenant isolation.
+До полного завершения Этапа 3 остаются смена и восстановление пароля с отзывом сессий, rate limit, production mailer и аутентифицированный gRPC transport. PostgreSQL семейного домена и S3 ещё не подключены; они не должны использовать базу Identity Service.
+
+Следующий малый вертикальный срез: смена/восстановление пароля и rate limiting. Затем можно переходить к Этапу 4: `FamilyTree`, `TreeMember` и обязательная tenant isolation.

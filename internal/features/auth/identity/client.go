@@ -223,6 +223,70 @@ func (c *Client) GetAccessTokenKey(ctx context.Context) (model.AccessTokenKey, e
 	}, nil
 }
 
+func (c *Client) GetUser(
+	ctx context.Context,
+	userID uuid.UUID,
+) (model.User, error) {
+	callContext, cancel := c.callContext(ctx)
+	defer cancel()
+
+	response, err := c.api.GetUser(callContext, &identityv1.GetUserRequest{
+		UserId: userID.String(),
+	})
+	if err != nil {
+		return model.User{}, mapError("get user", err)
+	}
+	user, err := mapUser(response.GetUser())
+	if err != nil {
+		return model.User{}, fmt.Errorf("map Identity user response: %w", err)
+	}
+
+	return user, nil
+}
+
+func (c *Client) ListSessions(
+	ctx context.Context,
+	userID uuid.UUID,
+) ([]model.UserSession, error) {
+	callContext, cancel := c.callContext(ctx)
+	defer cancel()
+
+	response, err := c.api.ListSessions(callContext, &identityv1.ListSessionsRequest{
+		UserId: userID.String(),
+	})
+	if err != nil {
+		return nil, mapError("list sessions", err)
+	}
+	sessions := make([]model.UserSession, 0, len(response.GetSessions()))
+	for _, sessionResponse := range response.GetSessions() {
+		session, err := mapUserSession(sessionResponse)
+		if err != nil {
+			return nil, fmt.Errorf("map Identity session response: %w", err)
+		}
+		sessions = append(sessions, session)
+	}
+
+	return sessions, nil
+}
+
+func (c *Client) RevokeSession(
+	ctx context.Context,
+	userID uuid.UUID,
+	sessionID uuid.UUID,
+) error {
+	callContext, cancel := c.callContext(ctx)
+	defer cancel()
+
+	if _, err := c.api.RevokeSession(callContext, &identityv1.RevokeSessionRequest{
+		UserId:    userID.String(),
+		SessionId: sessionID.String(),
+	}); err != nil {
+		return mapError("revoke session", err)
+	}
+
+	return nil
+}
+
 func (c *Client) callContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if id := requestid.FromContext(ctx); id != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, requestIDMetadataKey, id)
@@ -281,6 +345,26 @@ func mapSession(response *identityv1.SessionResponse) (model.Session, error) {
 	}, nil
 }
 
+func mapUserSession(response *identityv1.UserSession) (model.UserSession, error) {
+	if response == nil || response.GetCreatedAtUnix() <= 0 ||
+		response.GetLastUsedAtUnix() <= 0 || response.GetExpiresAtUnix() <= 0 {
+		return model.UserSession{}, errors.New("Identity response contains an invalid user session")
+	}
+	sessionID, err := uuid.Parse(response.GetId())
+	if err != nil {
+		return model.UserSession{}, fmt.Errorf("invalid session ID: %w", err)
+	}
+
+	return model.UserSession{
+		ID:         sessionID,
+		UserAgent:  response.GetUserAgent(),
+		IPAddress:  response.GetIpAddress(),
+		CreatedAt:  time.Unix(response.GetCreatedAtUnix(), 0).UTC(),
+		LastUsedAt: time.Unix(response.GetLastUsedAtUnix(), 0).UTC(),
+		ExpiresAt:  time.Unix(response.GetExpiresAtUnix(), 0).UTC(),
+	}, nil
+}
+
 func mapError(operation string, err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("%w: Identity %s deadline exceeded", apperrors.ErrServiceUnavailable, operation)
@@ -297,6 +381,8 @@ func mapError(operation string, err error) error {
 		return fmt.Errorf("%w: Identity rejected %s", apperrors.ErrForbidden, operation)
 	case codes.FailedPrecondition:
 		return fmt.Errorf("%w: Identity rejected %s", apperrors.ErrUnprocessable, operation)
+	case codes.NotFound:
+		return fmt.Errorf("%w: Identity could not find resource for %s", apperrors.ErrNotFound, operation)
 	case codes.Unavailable, codes.DeadlineExceeded:
 		return fmt.Errorf("%w: Identity %s unavailable", apperrors.ErrServiceUnavailable, operation)
 	default:

@@ -828,6 +828,354 @@ func (x *GetAccessTokenPublicKeyResponse) GetAudience() string {
 	return ""
 }
 
+type GetUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserRequest) Reset() {
+	*x = GetUserRequest{}
+	mi := &file_identity_v1_identity_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserRequest) ProtoMessage() {}
+
+func (x *GetUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserRequest.ProtoReflect.Descriptor instead.
+func (*GetUserRequest) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetUserRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type GetUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	User          *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserResponse) Reset() {
+	*x = GetUserResponse{}
+	mi := &file_identity_v1_identity_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserResponse) ProtoMessage() {}
+
+func (x *GetUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserResponse.ProtoReflect.Descriptor instead.
+func (*GetUserResponse) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetUserResponse) GetUser() *User {
+	if x != nil {
+		return x.User
+	}
+	return nil
+}
+
+type ListSessionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSessionsRequest) Reset() {
+	*x = ListSessionsRequest{}
+	mi := &file_identity_v1_identity_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionsRequest) ProtoMessage() {}
+
+func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionsRequest.ProtoReflect.Descriptor instead.
+func (*ListSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListSessionsRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type UserSession struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	UserAgent      string                 `protobuf:"bytes,2,opt,name=user_agent,json=userAgent,proto3" json:"user_agent,omitempty"`
+	IpAddress      string                 `protobuf:"bytes,3,opt,name=ip_address,json=ipAddress,proto3" json:"ip_address,omitempty"`
+	CreatedAtUnix  int64                  `protobuf:"varint,4,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
+	LastUsedAtUnix int64                  `protobuf:"varint,5,opt,name=last_used_at_unix,json=lastUsedAtUnix,proto3" json:"last_used_at_unix,omitempty"`
+	ExpiresAtUnix  int64                  `protobuf:"varint,6,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *UserSession) Reset() {
+	*x = UserSession{}
+	mi := &file_identity_v1_identity_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserSession) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserSession) ProtoMessage() {}
+
+func (x *UserSession) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserSession.ProtoReflect.Descriptor instead.
+func (*UserSession) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *UserSession) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UserSession) GetUserAgent() string {
+	if x != nil {
+		return x.UserAgent
+	}
+	return ""
+}
+
+func (x *UserSession) GetIpAddress() string {
+	if x != nil {
+		return x.IpAddress
+	}
+	return ""
+}
+
+func (x *UserSession) GetCreatedAtUnix() int64 {
+	if x != nil {
+		return x.CreatedAtUnix
+	}
+	return 0
+}
+
+func (x *UserSession) GetLastUsedAtUnix() int64 {
+	if x != nil {
+		return x.LastUsedAtUnix
+	}
+	return 0
+}
+
+func (x *UserSession) GetExpiresAtUnix() int64 {
+	if x != nil {
+		return x.ExpiresAtUnix
+	}
+	return 0
+}
+
+type ListSessionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sessions      []*UserSession         `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSessionsResponse) Reset() {
+	*x = ListSessionsResponse{}
+	mi := &file_identity_v1_identity_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionsResponse) ProtoMessage() {}
+
+func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionsResponse.ProtoReflect.Descriptor instead.
+func (*ListSessionsResponse) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListSessionsResponse) GetSessions() []*UserSession {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+type RevokeSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeSessionRequest) Reset() {
+	*x = RevokeSessionRequest{}
+	mi := &file_identity_v1_identity_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeSessionRequest) ProtoMessage() {}
+
+func (x *RevokeSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeSessionRequest.ProtoReflect.Descriptor instead.
+func (*RevokeSessionRequest) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RevokeSessionRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *RevokeSessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type RevokeSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeSessionResponse) Reset() {
+	*x = RevokeSessionResponse{}
+	mi := &file_identity_v1_identity_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeSessionResponse) ProtoMessage() {}
+
+func (x *RevokeSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeSessionResponse.ProtoReflect.Descriptor instead.
+func (*RevokeSessionResponse) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{20}
+}
+
 var File_identity_v1_identity_proto protoreflect.FileDescriptor
 
 const file_identity_v1_identity_proto_rawDesc = "" +
@@ -881,14 +1229,36 @@ const file_identity_v1_identity_proto_rawDesc = "" +
 	"\talgorithm\x18\x02 \x01(\tR\talgorithm\x12*\n" +
 	"\x11public_key_base64\x18\x03 \x01(\tR\x0fpublicKeyBase64\x12\x16\n" +
 	"\x06issuer\x18\x04 \x01(\tR\x06issuer\x12\x1a\n" +
-	"\baudience\x18\x05 \x01(\tR\baudience*\x8d\x01\n" +
+	"\baudience\x18\x05 \x01(\tR\baudience\")\n" +
+	"\x0eGetUserRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"8\n" +
+	"\x0fGetUserResponse\x12%\n" +
+	"\x04user\x18\x01 \x01(\v2\x11.identity.v1.UserR\x04user\".\n" +
+	"\x13ListSessionsRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"\xd6\x01\n" +
+	"\vUserSession\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"user_agent\x18\x02 \x01(\tR\tuserAgent\x12\x1d\n" +
+	"\n" +
+	"ip_address\x18\x03 \x01(\tR\tipAddress\x12&\n" +
+	"\x0fcreated_at_unix\x18\x04 \x01(\x03R\rcreatedAtUnix\x12)\n" +
+	"\x11last_used_at_unix\x18\x05 \x01(\x03R\x0elastUsedAtUnix\x12&\n" +
+	"\x0fexpires_at_unix\x18\x06 \x01(\x03R\rexpiresAtUnix\"L\n" +
+	"\x14ListSessionsResponse\x124\n" +
+	"\bsessions\x18\x01 \x03(\v2\x18.identity.v1.UserSessionR\bsessions\"N\n" +
+	"\x14RevokeSessionRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\"\x17\n" +
+	"\x15RevokeSessionResponse*\x8d\x01\n" +
 	"\n" +
 	"UserStatus\x12\x1b\n" +
 	"\x17USER_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13USER_STATUS_PENDING\x10\x01\x12\x16\n" +
 	"\x12USER_STATUS_ACTIVE\x10\x02\x12\x17\n" +
 	"\x13USER_STATUS_BLOCKED\x10\x03\x12\x18\n" +
-	"\x14USER_STATUS_DELETING\x10\x042\xc7\x04\n" +
+	"\x14USER_STATUS_DELETING\x10\x042\xba\x06\n" +
 	"\x0fIdentityService\x12G\n" +
 	"\bRegister\x12\x1c.identity.v1.RegisterRequest\x1a\x1d.identity.v1.RegisterResponse\x12P\n" +
 	"\vVerifyEmail\x12\x1f.identity.v1.VerifyEmailRequest\x1a .identity.v1.VerifyEmailResponse\x12@\n" +
@@ -896,7 +1266,10 @@ const file_identity_v1_identity_proto_rawDesc = "" +
 	"\x0eRefreshSession\x12\".identity.v1.RefreshSessionRequest\x1a\x1c.identity.v1.SessionResponse\x12A\n" +
 	"\x06Logout\x12\x1a.identity.v1.LogoutRequest\x1a\x1b.identity.v1.LogoutResponse\x12J\n" +
 	"\tLogoutAll\x12\x1d.identity.v1.LogoutAllRequest\x1a\x1e.identity.v1.LogoutAllResponse\x12t\n" +
-	"\x17GetAccessTokenPublicKey\x12+.identity.v1.GetAccessTokenPublicKeyRequest\x1a,.identity.v1.GetAccessTokenPublicKeyResponseB>Z<github.com/ZheglY/family_tree_app/gen/identity/v1;identityv1b\x06proto3"
+	"\x17GetAccessTokenPublicKey\x12+.identity.v1.GetAccessTokenPublicKeyRequest\x1a,.identity.v1.GetAccessTokenPublicKeyResponse\x12D\n" +
+	"\aGetUser\x12\x1b.identity.v1.GetUserRequest\x1a\x1c.identity.v1.GetUserResponse\x12S\n" +
+	"\fListSessions\x12 .identity.v1.ListSessionsRequest\x1a!.identity.v1.ListSessionsResponse\x12V\n" +
+	"\rRevokeSession\x12!.identity.v1.RevokeSessionRequest\x1a\".identity.v1.RevokeSessionResponseB>Z<github.com/ZheglY/family_tree_app/gen/identity/v1;identityv1b\x06proto3"
 
 var (
 	file_identity_v1_identity_proto_rawDescOnce sync.Once
@@ -911,7 +1284,7 @@ func file_identity_v1_identity_proto_rawDescGZIP() []byte {
 }
 
 var file_identity_v1_identity_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_identity_v1_identity_proto_goTypes = []any{
 	(UserStatus)(0),                         // 0: identity.v1.UserStatus
 	(*User)(nil),                            // 1: identity.v1.User
@@ -928,31 +1301,46 @@ var file_identity_v1_identity_proto_goTypes = []any{
 	(*LogoutAllResponse)(nil),               // 12: identity.v1.LogoutAllResponse
 	(*GetAccessTokenPublicKeyRequest)(nil),  // 13: identity.v1.GetAccessTokenPublicKeyRequest
 	(*GetAccessTokenPublicKeyResponse)(nil), // 14: identity.v1.GetAccessTokenPublicKeyResponse
+	(*GetUserRequest)(nil),                  // 15: identity.v1.GetUserRequest
+	(*GetUserResponse)(nil),                 // 16: identity.v1.GetUserResponse
+	(*ListSessionsRequest)(nil),             // 17: identity.v1.ListSessionsRequest
+	(*UserSession)(nil),                     // 18: identity.v1.UserSession
+	(*ListSessionsResponse)(nil),            // 19: identity.v1.ListSessionsResponse
+	(*RevokeSessionRequest)(nil),            // 20: identity.v1.RevokeSessionRequest
+	(*RevokeSessionResponse)(nil),           // 21: identity.v1.RevokeSessionResponse
 }
 var file_identity_v1_identity_proto_depIdxs = []int32{
 	0,  // 0: identity.v1.User.status:type_name -> identity.v1.UserStatus
 	1,  // 1: identity.v1.RegisterResponse.user:type_name -> identity.v1.User
 	1,  // 2: identity.v1.VerifyEmailResponse.user:type_name -> identity.v1.User
 	1,  // 3: identity.v1.SessionResponse.user:type_name -> identity.v1.User
-	2,  // 4: identity.v1.IdentityService.Register:input_type -> identity.v1.RegisterRequest
-	4,  // 5: identity.v1.IdentityService.VerifyEmail:input_type -> identity.v1.VerifyEmailRequest
-	6,  // 6: identity.v1.IdentityService.Login:input_type -> identity.v1.LoginRequest
-	7,  // 7: identity.v1.IdentityService.RefreshSession:input_type -> identity.v1.RefreshSessionRequest
-	9,  // 8: identity.v1.IdentityService.Logout:input_type -> identity.v1.LogoutRequest
-	11, // 9: identity.v1.IdentityService.LogoutAll:input_type -> identity.v1.LogoutAllRequest
-	13, // 10: identity.v1.IdentityService.GetAccessTokenPublicKey:input_type -> identity.v1.GetAccessTokenPublicKeyRequest
-	3,  // 11: identity.v1.IdentityService.Register:output_type -> identity.v1.RegisterResponse
-	5,  // 12: identity.v1.IdentityService.VerifyEmail:output_type -> identity.v1.VerifyEmailResponse
-	8,  // 13: identity.v1.IdentityService.Login:output_type -> identity.v1.SessionResponse
-	8,  // 14: identity.v1.IdentityService.RefreshSession:output_type -> identity.v1.SessionResponse
-	10, // 15: identity.v1.IdentityService.Logout:output_type -> identity.v1.LogoutResponse
-	12, // 16: identity.v1.IdentityService.LogoutAll:output_type -> identity.v1.LogoutAllResponse
-	14, // 17: identity.v1.IdentityService.GetAccessTokenPublicKey:output_type -> identity.v1.GetAccessTokenPublicKeyResponse
-	11, // [11:18] is the sub-list for method output_type
-	4,  // [4:11] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	1,  // 4: identity.v1.GetUserResponse.user:type_name -> identity.v1.User
+	18, // 5: identity.v1.ListSessionsResponse.sessions:type_name -> identity.v1.UserSession
+	2,  // 6: identity.v1.IdentityService.Register:input_type -> identity.v1.RegisterRequest
+	4,  // 7: identity.v1.IdentityService.VerifyEmail:input_type -> identity.v1.VerifyEmailRequest
+	6,  // 8: identity.v1.IdentityService.Login:input_type -> identity.v1.LoginRequest
+	7,  // 9: identity.v1.IdentityService.RefreshSession:input_type -> identity.v1.RefreshSessionRequest
+	9,  // 10: identity.v1.IdentityService.Logout:input_type -> identity.v1.LogoutRequest
+	11, // 11: identity.v1.IdentityService.LogoutAll:input_type -> identity.v1.LogoutAllRequest
+	13, // 12: identity.v1.IdentityService.GetAccessTokenPublicKey:input_type -> identity.v1.GetAccessTokenPublicKeyRequest
+	15, // 13: identity.v1.IdentityService.GetUser:input_type -> identity.v1.GetUserRequest
+	17, // 14: identity.v1.IdentityService.ListSessions:input_type -> identity.v1.ListSessionsRequest
+	20, // 15: identity.v1.IdentityService.RevokeSession:input_type -> identity.v1.RevokeSessionRequest
+	3,  // 16: identity.v1.IdentityService.Register:output_type -> identity.v1.RegisterResponse
+	5,  // 17: identity.v1.IdentityService.VerifyEmail:output_type -> identity.v1.VerifyEmailResponse
+	8,  // 18: identity.v1.IdentityService.Login:output_type -> identity.v1.SessionResponse
+	8,  // 19: identity.v1.IdentityService.RefreshSession:output_type -> identity.v1.SessionResponse
+	10, // 20: identity.v1.IdentityService.Logout:output_type -> identity.v1.LogoutResponse
+	12, // 21: identity.v1.IdentityService.LogoutAll:output_type -> identity.v1.LogoutAllResponse
+	14, // 22: identity.v1.IdentityService.GetAccessTokenPublicKey:output_type -> identity.v1.GetAccessTokenPublicKeyResponse
+	16, // 23: identity.v1.IdentityService.GetUser:output_type -> identity.v1.GetUserResponse
+	19, // 24: identity.v1.IdentityService.ListSessions:output_type -> identity.v1.ListSessionsResponse
+	21, // 25: identity.v1.IdentityService.RevokeSession:output_type -> identity.v1.RevokeSessionResponse
+	16, // [16:26] is the sub-list for method output_type
+	6,  // [6:16] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_identity_v1_identity_proto_init() }
@@ -966,7 +1354,7 @@ func file_identity_v1_identity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_identity_v1_identity_proto_rawDesc), len(file_identity_v1_identity_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   14,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

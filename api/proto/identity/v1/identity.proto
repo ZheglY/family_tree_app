@@ -12,6 +12,9 @@ service IdentityService {
   rpc Logout(LogoutRequest) returns (LogoutResponse);
   rpc LogoutAll(LogoutAllRequest) returns (LogoutAllResponse);
   rpc GetAccessTokenPublicKey(GetAccessTokenPublicKeyRequest) returns (GetAccessTokenPublicKeyResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
 }
 
 enum UserStatus {
@@ -92,3 +95,35 @@ message GetAccessTokenPublicKeyResponse {
   string issuer = 4;
   string audience = 5;
 }
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message ListSessionsRequest {
+  string user_id = 1;
+}
+
+message UserSession {
+  string id = 1;
+  string user_agent = 2;
+  string ip_address = 3;
+  int64 created_at_unix = 4;
+  int64 last_used_at_unix = 5;
+  int64 expires_at_unix = 6;
+}
+
+message ListSessionsResponse {
+  repeated UserSession sessions = 1;
+}
+
+message RevokeSessionRequest {
+  string user_id = 1;
+  string session_id = 2;
+}
+
+message RevokeSessionResponse {}

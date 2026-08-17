@@ -171,10 +171,47 @@ try {
         throw "Refresh access token is empty"
     }
 
+    $authorization = @{Authorization = "Bearer " + $refresh.access_token}
+    $profile = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/users/me" `
+        -Headers $authorization
+    if ($profile.user.email -ne $email) {
+        throw "Current-user profile does not match the authenticated account"
+    }
+
+    $secondLoginResponse = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/auth/login" `
+        -ContentType "application/json" `
+        -Body $loginBody `
+        -SessionVariable secondBrowserSession
+    if ($secondLoginResponse.StatusCode -ne 200) {
+        throw "Second session could not be created"
+    }
+    $sessions = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/users/me/sessions" `
+        -Headers $authorization
+    if ($sessions.items.Count -ne 2) {
+        throw "Active session count is $($sessions.items.Count), want 2"
+    }
+    $otherSession = $sessions.items | Where-Object { -not $_.current } | Select-Object -First 1
+    if ($null -eq $otherSession) {
+        throw "Session list did not identify the current session"
+    }
+    $revokeOther = Invoke-WebRequest `
+        -Method Delete `
+        -Uri "$baseURL/api/v1/users/me/sessions/$($otherSession.id)" `
+        -Headers $authorization
+    if ($revokeOther.StatusCode -ne 204) {
+        throw "Selected session revoke returned $($revokeOther.StatusCode), want 204"
+    }
+
     $logoutAll = Invoke-RestMethod `
         -Method Post `
         -Uri "$baseURL/api/v1/auth/logout-all" `
-        -Headers @{Authorization = "Bearer " + $refresh.access_token} `
+        -Headers $authorization `
         -WebSession $browserSession
     if ($logoutAll.revoked_session_count -lt 1) {
         throw "Logout-all did not revoke a session"
@@ -194,6 +231,8 @@ try {
         registered_status = $register.user.status
         verified_status = $verified.user.status
         refresh_cookie_http_only = $refreshCookie.HttpOnly
+        profile_email = $profile.user.email
+        sessions_before_revoke = $sessions.items.Count
         refresh_after_logout_all = $afterLogout.StatusCode
     }
 } catch {

@@ -28,3 +28,12 @@ type AccessTokenKey struct {
 	Issuer          string
 	Audience        string
 }
+
+type UserSession struct {
+	ID         uuid.UUID
+	UserAgent  string
+	IPAddress  string
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+	ExpiresAt  time.Time
+}

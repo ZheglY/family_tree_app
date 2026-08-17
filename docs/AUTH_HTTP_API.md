@@ -14,6 +14,9 @@ All endpoints use JSON under `/api/v1`:
 | `POST` | `/auth/refresh` | refresh cookie | Rotates the refresh token and returns a new access token |
 | `POST` | `/auth/logout` | refresh cookie if present | Revokes one session and clears the cookie |
 | `POST` | `/auth/logout-all` | bearer access token | Revokes every session owned by the authenticated user |
+| `GET` | `/users/me` | bearer access token | Returns the current account profile |
+| `GET` | `/users/me/sessions` | bearer access token | Lists active, non-expired sessions and marks the current one |
+| `DELETE` | `/users/me/sessions/{session_id}` | bearer access token | Revokes one session owned by the current user |
 
 Login request example:
 
