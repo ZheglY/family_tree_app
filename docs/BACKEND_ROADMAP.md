@@ -4,12 +4,13 @@
 
 ## 1. Целевая архитектура
 
-Для проекта подходит модульный монолит на Go:
+Для семейного домена подходит модульный монолит на Go. Аутентификация является единственным заранее принятым исключением и реализуется отдельным gRPC Identity Service согласно `docs/ADR-001-IDENTITY-SERVICE.md`:
 
 ```text
 HTTP client
     -> middleware
     -> transport (HTTP, DTO, validation)
+    -> gRPC client -> Identity Service (только auth-сценарии)
     -> service/use case (business rules and authorization)
     -> repository interfaces
     -> PostgreSQL / Yandex Object Storage
@@ -31,7 +32,6 @@ internal/
     validation/
     transport/http/
   features/
-    auth/
     users/
     trees/
     persons/
@@ -72,7 +72,7 @@ feature/
 
 ### Что пока не нужно
 
-- микросервисы;
+- дополнительные микросервисы помимо Identity Service;
 - графовая база;
 - Kafka/RabbitMQ;
 - event sourcing;
@@ -140,7 +140,7 @@ feature/
 
 ### 3.1. User
 
-Учётная запись владельца данных.
+Учётная запись владельца данных. Источником истины для этой сущности является Identity Service; Family API использует выпущенный им UUID и при необходимости хранит только локальную проекцию несекретных полей.
 
 Основные поля:
 
@@ -156,12 +156,16 @@ feature/
 
 ### 3.2. UserCredential
 
+Хранится только в базе Identity Service.
+
 - `user_id`;
 - `password_hash`;
 - `password_changed_at`;
 - служебные поля для блокировки перебора при необходимости.
 
 ### 3.3. UserSession
+
+Хранится только в базе Identity Service.
 
 - `id`;
 - `user_id`;
@@ -174,6 +178,8 @@ Refresh token хранится только в виде хеша. При обн�
 ### 3.4. OneTimeToken
 
 Для подтверждения email и восстановления пароля можно использовать одну техническую модель:
+
+Таблица принадлежит Identity Service.
 
 - `id`, `user_id`;
 - `purpose`;
@@ -396,6 +402,8 @@ authenticated user
 Для скрытия существования чужого объекта API обычно возвращает `404`, а не `403`, если пользователь вообще не состоит в дереве.
 
 ## 6. Аутентификация
+
+Источником истины для аккаунтов, credentials, одноразовых токенов и сессий является отдельный Identity Service. Family API публикует браузерные HTTP endpoints и вызывает версионированный gRPC-контракт `identity.v1`. Access token проверяется Family API локально; refresh, logout и управление сессиями выполняются через Identity Service.
 
 Рекомендуемая схема для браузерного клиента:
 
@@ -627,7 +635,7 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 Готово, когда чистая БД разворачивается одной командой, миграции повторяемы, readiness отражает недоступность PostgreSQL.
 
-### Этап 2. Регистрация
+### Этап 2. Регистрация в Identity Service
 
 Вертикальный срез:
 
@@ -640,9 +648,9 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 На первом локальном этапе отправку email можно заменить интерфейсом Mailer с dev-реализацией, которая безопасно показывает ссылку только в development.
 
-### Этап 3. Вход и сессии
+### Этап 3. Вход, сессии и интеграция сервисов
 
-Реализовать login, refresh rotation, logout, logout-all, auth middleware и `GET /users/me`.
+Реализовать login, refresh rotation, logout и logout-all в Identity Service. В Family API добавить gRPC client, HTTP auth endpoints, локальную проверку access token, auth middleware и `GET /users/me`.
 
 Тесты обязательно покрывают:
 
@@ -834,4 +842,3 @@ JSON schema должна иметь собственную версию. Имп�
 - тестов практически нет.
 
 Поэтому первая самостоятельная задача владельца — не регистрация, а завершение Этапа 0: сделать HTTP-фундамент корректным и покрыть его небольшими unit-тестами. После этого подключать PostgreSQL и реализовывать auth вертикальными срезами.
-

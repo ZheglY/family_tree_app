@@ -22,13 +22,13 @@ type UserService interface {
 func (h *UsersHTTPHandler) Routes() []server.Route {
 	return []server.Route{
 		{
-			Method: http.MethodPost,
-			Path: "users/",
+			Method:  http.MethodPost,
+			Path:    "users/",
 			Handler: h.CreateUser,
 		},
 		{
-			Method: http.MethodGet,
-			Path: "users/{id}",
+			Method:  http.MethodGet,
+			Path:    "users/{id}",
 			Handler: h.GetUser,
 		},
 	}

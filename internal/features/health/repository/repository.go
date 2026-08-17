@@ -6,9 +6,8 @@ type HealthRepository struct {
 
 func NewHealthRepository(
 	pool string,
-) *HealthRepository{
+) *HealthRepository {
 	return &HealthRepository{
 		pool: pool,
 	}
 }
-

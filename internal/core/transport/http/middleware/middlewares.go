@@ -29,10 +29,9 @@ const (
 	requestIDHeader = "X-Request-ID"
 )
 
-
-/* 
+/*
 Обвешивает handler мидлварями
-Цикл идёт с конца, потому что каждая новая обёртка помещается 
+Цикл идёт с конца, потому что каждая новая обёртка помещается
 снаружи предыдущей.
 */
 func ChainMiddleware(
@@ -50,7 +49,7 @@ func ChainMiddleware(
 	return h
 }
 
-// Создает уникальный индентификатор поступишего запроса и 
+// Создает уникальный индентификатор поступишего запроса и
 // сохраняет его в заголовок запроса для middleware Trace
 func RequestID() Middleware {
 	return func(next http.Handler) http.Handler { // Возвращается middleware, которая запоминает следующий handler в переменной next.
@@ -63,7 +62,7 @@ func RequestID() Middleware {
 
 				// Меняем поле заголовка на новый ID для других мидлварь
 				r.Header.Set(requestIDHeader, requestID)
-				
+
 				// Сразу формируем ответный json с айдишником для фронта
 				rw.Header().Set(requestIDHeader, requestID)
 
@@ -72,7 +71,7 @@ func RequestID() Middleware {
 	}
 }
 
-// Кладет логгер в конекст для возможности использования одного 
+// Кладет логгер в конекст для возможности использования одного
 // логера во всех слоях обработки запроса
 // log *logger.Logger - был создан один раз в main.
 func Logger(log *logger.Logger) Middleware {
@@ -86,7 +85,7 @@ func Logger(log *logger.Logger) Middleware {
 					zap.String("request_id", requestID),
 					zap.String("url", r.URL.String()),
 				)
-				
+
 				// Сохраняем логер в контекст
 				ctx := logger.ToContext(
 					r.Context(),
@@ -129,8 +128,8 @@ func Trace() Middleware {
 	}
 }
 
-// middleware которая перехватывает неожиданный panic в 
-// последующих middleware или конечном handler, записывает 
+// middleware которая перехватывает неожиданный panic в
+// последующих middleware или конечном handler, записывает
 // информацию в лог и возвращает клиенту контролируемый ответ 500.
 func Recovery() Middleware {
 	return func(next http.Handler) http.Handler {
@@ -148,6 +147,17 @@ func Recovery() Middleware {
 				}
 			}()
 
+			next.ServeHTTP(rw, r)
+		})
+	}
+}
+
+// BodyLimit bounds JSON and form request bodies handled by the API. Large
+// media files are uploaded directly to object storage via presigned URLs.
+func BodyLimit(maxBytes int64) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(rw, r.Body, maxBytes)
 			next.ServeHTTP(rw, r)
 		})
 	}

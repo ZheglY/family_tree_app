@@ -14,7 +14,7 @@ type HealthRepository interface {
 
 func NewHealthService(
 	healthRepository HealthRepository,
-) *HealthService{
+) *HealthService {
 	return &HealthService{
 		healthRepository: healthRepository,
 	}
