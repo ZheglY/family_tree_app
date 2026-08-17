@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/requestid"
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/response"
 )
 
@@ -14,8 +15,11 @@ func TestRequestIDGeneratesAndReturnsHeader(t *testing.T) {
 	t.Parallel()
 
 	handler := RequestID()(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		if r.Header.Get(requestIDHeader) == "" {
+		if r.Header.Get(requestid.Header) == "" {
 			t.Fatal("request ID was not added to request")
+		}
+		if requestid.FromContext(r.Context()) == "" {
+			t.Fatal("request ID was not added to context")
 		}
 		rw.WriteHeader(http.StatusNoContent)
 	}))
@@ -24,7 +28,7 @@ func TestRequestIDGeneratesAndReturnsHeader(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
-	if recorder.Header().Get(requestIDHeader) == "" {
+	if recorder.Header().Get(requestid.Header) == "" {
 		t.Fatal("request ID was not added to response")
 	}
 }

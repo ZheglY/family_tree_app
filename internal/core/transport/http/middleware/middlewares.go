@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/requestid"
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/response"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -24,10 +25,6 @@ APIVersionRouter middleware — общие для одной версии
 Route middleware — только для одного endpoint
 */
 type Middleware func(http.Handler) http.Handler
-
-const (
-	requestIDHeader = "X-Request-ID"
-)
 
 /*
 Обвешивает handler мидлварями
@@ -55,18 +52,19 @@ func RequestID() Middleware {
 	return func(next http.Handler) http.Handler { // Возвращается middleware, которая запоминает следующий handler в переменной next.
 		return http.HandlerFunc(
 			func(rw http.ResponseWriter, r *http.Request) {
-				requestID := r.Header.Get(requestIDHeader)
+				requestID := r.Header.Get(requestid.Header)
 				if requestID == "" {
 					requestID = uuid.NewString() // генерация уникалного id
 				}
 
 				// Меняем поле заголовка на новый ID для других мидлварь
-				r.Header.Set(requestIDHeader, requestID)
+				r.Header.Set(requestid.Header, requestID)
 
 				// Сразу формируем ответный json с айдишником для фронта
-				rw.Header().Set(requestIDHeader, requestID)
+				rw.Header().Set(requestid.Header, requestID)
 
-				next.ServeHTTP(rw, r)
+				ctx := requestid.NewContext(r.Context(), requestID)
+				next.ServeHTTP(rw, r.WithContext(ctx))
 			})
 	}
 }
@@ -78,7 +76,7 @@ func Logger(log *logger.Logger) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(
 			func(rw http.ResponseWriter, r *http.Request) {
-				requestID := r.Header.Get(requestIDHeader)
+				requestID := requestid.FromContext(r.Context())
 
 				// Изменяет вывод логов
 				l := log.With(

@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package identity.v1;
+
+option go_package = "github.com/ZheglY/family_tree_app/gen/identity/v1;identityv1";
+
+service IdentityService {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse);
+  rpc Login(LoginRequest) returns (SessionResponse);
+  rpc RefreshSession(RefreshSessionRequest) returns (SessionResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc LogoutAll(LogoutAllRequest) returns (LogoutAllResponse);
+  rpc GetAccessTokenPublicKey(GetAccessTokenPublicKeyRequest) returns (GetAccessTokenPublicKeyResponse);
+}
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_PENDING = 1;
+  USER_STATUS_ACTIVE = 2;
+  USER_STATUS_BLOCKED = 3;
+  USER_STATUS_DELETING = 4;
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string display_name = 3;
+  UserStatus status = 4;
+}
+
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+  string display_name = 3;
+}
+
+message RegisterResponse {
+  User user = 1;
+  bool verification_required = 2;
+}
+
+message VerifyEmailRequest {
+  string token = 1;
+}
+
+message VerifyEmailResponse {
+  User user = 1;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+  string user_agent = 3;
+  string ip_address = 4;
+}
+
+message RefreshSessionRequest {
+  string refresh_token = 1;
+  string user_agent = 2;
+  string ip_address = 3;
+}
+
+message SessionResponse {
+  User user = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  int64 access_token_expires_at_unix = 4;
+  int64 refresh_token_expires_at_unix = 5;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message LogoutResponse {}
+
+message LogoutAllRequest {
+  string user_id = 1;
+}
+
+message LogoutAllResponse {
+  int64 revoked_session_count = 1;
+}
+
+message GetAccessTokenPublicKeyRequest {}
+
+message GetAccessTokenPublicKeyResponse {
+  string key_id = 1;
+  string algorithm = 2;
+  string public_key_base64 = 3;
+  string issuer = 4;
+  string audience = 5;
+}

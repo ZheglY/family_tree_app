@@ -10,13 +10,14 @@ import (
 
 	apperrors "github.com/ZheglY/family_tree_app/internal/core/errors"
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/requestid"
 )
 
 func TestErrorResponseHidesInternalError(t *testing.T) {
 	t.Parallel()
 
 	recorder := httptest.NewRecorder()
-	recorder.Header().Set(requestIDHeader, "request-123")
+	recorder.Header().Set(requestid.Header, "request-123")
 	handler := NewHTTPResponseHandler(logger.NewNop(), recorder)
 
 	handler.ErrorResponse(errors.New("database password leaked"), "query failed")
@@ -40,6 +41,18 @@ func TestErrorResponseHidesInternalError(t *testing.T) {
 
 	if got, want := envelope.Error.RequestID, "request-123"; got != want {
 		t.Fatalf("request ID = %q, want %q", got, want)
+	}
+}
+
+func TestErrorResponseMapsServiceUnavailable(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	handler := NewHTTPResponseHandler(logger.NewNop(), recorder)
+	handler.ErrorResponse(apperrors.ErrServiceUnavailable, "Identity service is unavailable")
+
+	if got, want := recorder.Code, http.StatusServiceUnavailable; got != want {
+		t.Fatalf("status code = %d, want %d", got, want)
 	}
 }
 

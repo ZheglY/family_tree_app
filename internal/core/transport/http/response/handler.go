@@ -8,6 +8,7 @@ import (
 
 	apperrors "github.com/ZheglY/family_tree_app/internal/core/errors"
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/requestid"
 	"go.uber.org/zap"
 )
 
@@ -16,8 +17,6 @@ type HTTPResponseHandler struct {
 	log *logger.Logger
 	rw  http.ResponseWriter
 }
-
-const requestIDHeader = "X-Request-ID"
 
 type ErrorEnvelope struct {
 	Error ErrorBody `json:"error"`
@@ -106,6 +105,11 @@ func (h *HTTPResponseHandler) ErrorResponse(err error, msg string) {
 		errorCode = "too_many_requests"
 		logFunc = h.log.Warn
 
+	case errors.Is(err, apperrors.ErrServiceUnavailable):
+		statusCode = http.StatusServiceUnavailable
+		errorCode = "service_unavailable"
+		logFunc = h.log.Warn
+
 	default:
 		statusCode = http.StatusInternalServerError
 		errorCode = "internal_error"
@@ -140,7 +144,7 @@ func (h *HTTPResponseHandler) errorResponse(
 			Code:      errorCode,
 			Message:   msg,
 			Details:   map[string]any{},
-			RequestID: h.rw.Header().Get(requestIDHeader),
+			RequestID: h.rw.Header().Get(requestid.Header),
 		},
 	}
 

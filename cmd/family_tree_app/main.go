@@ -7,6 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/ZheglY/family_tree_app/internal/features/auth/access"
+	identityclient "github.com/ZheglY/family_tree_app/internal/features/auth/identity"
+	authservice "github.com/ZheglY/family_tree_app/internal/features/auth/service"
+	authhttp "github.com/ZheglY/family_tree_app/internal/features/auth/transport"
 	healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
 	healthservice "github.com/ZheglY/family_tree_app/internal/features/health/service"
 	healthhttp "github.com/ZheglY/family_tree_app/internal/features/health/transport"
@@ -19,10 +23,10 @@ import (
 
 func main() {
 	/*
-		signal.NotifyContext - Создаёт дочерний контекст, который отменится при одном из событий:
-	    1. отменился родительский контекст;
-	    2. процесс получил один из перечисленных сигналов;
-		3. была вызвана функция cancel.
+			signal.NotifyContext - Создаёт дочерний контекст, который отменится при одном из событий:
+		    1. отменился родительский контекст;
+		    2. процесс получил один из перечисленных сигналов;
+			3. была вызвана функция cancel.
 	*/
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -44,6 +48,43 @@ func main() {
 	healthRepository := healthrepository.NewHealthRepository("pool")
 	healthService := healthservice.NewHealthService(healthRepository)
 	healthTransportHTTP := healthhttp.NewHealthHTTPHandler(healthService)
+
+	log.Debug("initializing features", zap.String("feature", "auth"))
+	identityConfig, err := identityclient.LoadConfig()
+	if err != nil {
+		panic(err)
+	}
+	identityClient, err := identityclient.NewClient(identityConfig)
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		if err := identityClient.Close(); err != nil {
+			log.Warn("close Identity gRPC client", zap.Error(err))
+		}
+	}()
+	authService := authservice.NewAuthService(identityClient)
+	accessTokenKey, err := authService.GetAccessTokenKey(ctx)
+	if err != nil {
+		panic(fmt.Errorf("load access token public key: %w", err))
+	}
+	accessVerifier, err := access.NewVerifier(accessTokenKey)
+	if err != nil {
+		panic(fmt.Errorf("initialize access token verifier: %w", err))
+	}
+	cookieConfig, err := authhttp.LoadCookieConfig()
+	if err != nil {
+		panic(err)
+	}
+	refreshCookie, err := authhttp.NewRefreshCookie(cookieConfig)
+	if err != nil {
+		panic(err)
+	}
+	authTransportHTTP := authhttp.NewHandler(
+		authService,
+		refreshCookie,
+		access.RequireAccess(accessVerifier),
+	)
 
 	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
@@ -73,6 +114,9 @@ func main() {
 
 	// Здесь можно добавить мидлвари к конкретной api version
 	httpServer.RegisterRoutes(healthTransportHTTP.Routes()...)
+	apiV1Router := server.NewAPIVersionRouter(server.ApiVersion1)
+	apiV1Router.RegisterRoutes(authTransportHTTP.Routes()...)
+	httpServer.RegisterAPIRouters(apiV1Router)
 
 	if err := httpServer.Run(ctx); err != nil {
 		panic(err)
