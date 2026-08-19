@@ -21,7 +21,7 @@ context.WithValue(ctx, key, log)
 ctx.Value(key)
 — для получения logger из контекста.
 */
-type loggerContextKey struct {}
+type loggerContextKey struct{}
 
 var (
 	key = loggerContextKey{} // создаёт уникальный тип ключа, который не конфликтует с ключами других пакетов.
@@ -32,13 +32,18 @@ type Logger struct {
 	file *os.File
 }
 
-// Функция создаёт logger, который одновременно пишет 
+// NewNop returns a logger suitable for tests and small isolated components.
+func NewNop() *Logger {
+	return &Logger{Logger: zap.NewNop()}
+}
+
+// Функция создаёт logger, который одновременно пишет
 // сообщения в консоль и в файл.
 func NewLogger(config LoggerConfig) (*Logger, error) {
-	// Создаётся уровень логирования Zap. Слово Atomic означает, 
-	// что значение уровня можно безопасно менять во время работы 
+	// Создаётся уровень логирования Zap. Слово Atomic означает,
+	// что значение уровня можно безопасно менять во время работы
 	// приложения из разных горутин.
-	zapLvl := zap.NewAtomicLevel()  
+	zapLvl := zap.NewAtomicLevel()
 
 	// Метод UnmarshalText преобразует env LOGGER_LEVEL во внутренний тип Zap.
 	// Метод работает с байтами, поэтому предварительно переводим
@@ -59,48 +64,48 @@ func NewLogger(config LoggerConfig) (*Logger, error) {
 		fmt.Sprintf("%s.log", timestamp),
 	)
 
-	/* 
-	Открытие файла
-	os.O_CREATE - Создать файл, если он отсутствует.
-	os.O_WRONLY - Открыть файл только для записи.
+	/*
+		Открытие файла
+		os.O_CREATE - Создать файл, если он отсутствует.
+		os.O_WRONLY - Открыть файл только для записи.
 	*/
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("fail to open log file: %w", err)
 	}
 
-	// Настройка внешнего вида логов. Она определяет: 
-	// как отображать время, как отображать уровень, 
+	// Настройка внешнего вида логов. Она определяет:
+	// как отображать время, как отображать уровень,
 	// как называть пол, как выводить сообщения и stack trace.
 	zapConfig := zap.NewDevelopmentEncoderConfig()
-	
+
 	// Переопределяется формат времени внутри каждой записи лога.
 	zapConfig.EncodeTime = zapcore.TimeEncoderOfLayout("2006-01-02T15-04-05.000000")
 
 	// Encoder преобразует данные logger в текст.
 	zapEncoder := zapcore.NewConsoleEncoder(zapConfig)
 
-	/* 
-	Создание двух направлений записи. NewTee объединяет несколько logger core.
-	core в Zap отвечает на три вопроса:
-	1. как форматировать запись;
-	2. куда её записывать;
-	3. какие уровни разрешены.
-	*/ 
+	/*
+		Создание двух направлений записи. NewTee объединяет несколько logger core.
+		core в Zap отвечает на три вопроса:
+		1. как форматировать запись;
+		2. куда её записывать;
+		3. какие уровни разрешены.
+	*/
 	core := zapcore.NewTee(
 		zapcore.NewCore(zapEncoder, zapcore.AddSync(os.Stdout), zapLvl),
 		zapcore.NewCore(zapEncoder, zapcore.AddSync(logFile), zapLvl),
 	)
 
-	/* 
-	Из настроенного core создаётся готовый *zap.Logger.
-	zap.AddCaller() - Из настроенного core создаётся готовый *zap.Logger.
+	/*
+		Из настроенного core создаётся готовый *zap.Logger.
+		zap.AddCaller() - Из настроенного core создаётся готовый *zap.Logger.
 	*/
 	zapLogger := zap.New(core, zap.AddCaller())
 
 	return &Logger{
 		Logger: zapLogger,
-		file: logFile,
+		file:   logFile,
 	}, nil
 
 }
@@ -116,7 +121,7 @@ func ToContext(ctx context.Context, log *Logger) context.Context {
 
 // Достает логгер из контекста
 func FromContext(ctx context.Context) *Logger {
-	// Проверь, является ли полученное значение указателем *Logger. 
+	// Проверь, является ли полученное значение указателем *Logger.
 	// Если да — верни его как *Logger.
 	log, ok := ctx.Value(key).(*Logger) // Это type assertion — утверждение типа.
 	if !ok {
@@ -127,7 +132,7 @@ func FromContext(ctx context.Context) *Logger {
 }
 
 /*
-Создаётся производный logger, постоянно содержащий поля 
+Создаётся производный logger, постоянно содержащий поля
 текущего запроса:
 
 При добавлении таких ключ - значений:
@@ -142,12 +147,16 @@ INFO health check started request_id=abc-123 url=/api/v1/health
 func (l *Logger) With(field ...zap.Field) *Logger {
 	return &Logger{
 		Logger: l.Logger.With(field...),
-		file: l.file,
+		file:   l.file,
 	}
 }
 
 // Закрытие файла для логов
 func (l *Logger) Close() {
+	if l == nil || l.file == nil {
+		return
+	}
+
 	if err := l.file.Close(); err != nil {
 		fmt.Println("failed to close logger", err)
 	}

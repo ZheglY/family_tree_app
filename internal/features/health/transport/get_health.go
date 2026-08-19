@@ -1,27 +1,33 @@
 package healthhttp
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
-)
 
+	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/transport/http/response"
+)
 
 type HealthDTOResponse struct {
 	Response string `json:"response"`
-	Logs string `json:"logs"`
+	Logs     string `json:"logs"`
 }
 
-// Это HandleFunc которая далее будет использов
+// Проверка работоспособности приложения
 func (h *HealthHadler) GetHealth(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	
-	err := h.healthService.GetHealth(ctx)
-	fmt.Printf("Уровень транспорта работает исправно")
+	log := logger.FromContext(ctx)
+	responseHandler := response.NewHTTPResponseHandler(log, rw)
 
-	rw.WriteHeader(200)
-	json.NewEncoder(rw).Encode(HealthDTOResponse{
-		Response: "ok",
-		Logs: fmt.Sprintf("Logs: %v", err),
-	})
+	if err := h.healthService.GetHealth(ctx); err != nil {
+		responseHandler.ErrorResponse(
+			err,
+			"failed to get app health info",
+		)
+		return
+	}
+
+	responseHandler.JSONResponse(
+		HealthDTOResponse{Response: "OK"},
+		http.StatusOK,
+	)
 }

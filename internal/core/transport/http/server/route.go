@@ -7,13 +7,13 @@ import (
 )
 
 type Route struct {
-	Method string
-	Path string
-	Handler http.HandlerFunc
+	Method     string
+	Path       string
+	Handler    http.HandlerFunc
 	Middleware []middleware.Middleware
 }
 
-/* 
+/*
 Оборачивает один конечный handler
 
 Route.WithMiddleware()            → один endpoint

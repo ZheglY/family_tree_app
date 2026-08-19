@@ -19,7 +19,7 @@ type HealthService interface {
 
 func NewHealthHTTPHandler(
 	healthService HealthService,
-) *HealthHadler{
+) *HealthHadler {
 	return &HealthHadler{
 		healthService: healthService,
 	}
@@ -29,9 +29,9 @@ func NewHealthHTTPHandler(
 func (h *HealthHadler) Routes() []server.Route {
 	return []server.Route{
 		{
-			Method: http.MethodGet, // возвращает string = "POST"
-			Path: "/health",
-			Handler: h.GetHealth, // Наш HandleFunc
+			Method:  http.MethodGet,
+			Path:    "/health/live",
+			Handler: h.GetHealth,
 		},
 	}
 }

@@ -22,9 +22,9 @@ type APIVersionRouter struct {
 func NewAPIVersionRouter(
 	apiVersion ApiVersion,
 	middlewares ...middleware.Middleware,
-) *APIVersionRouter{
+) *APIVersionRouter {
 	return &APIVersionRouter{
-		ServeMux: http.NewServeMux(),
+		ServeMux:   http.NewServeMux(),
 		apiVersion: apiVersion,
 		middleware: middlewares,
 	}
@@ -50,7 +50,7 @@ func (r *APIVersionRouter) RegisterRoutes(routes ...Route) {
 	}
 }
 
-/* 
+/*
 Оборачивает все пути внутри APIVersionRouter
 
 Route.WithMiddleware()            → один endpoint
@@ -62,4 +62,3 @@ func (h *APIVersionRouter) WithMiddleware() http.Handler {
 		h.middleware...,
 	)
 }
-

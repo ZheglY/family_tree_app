@@ -15,10 +15,19 @@ mux *http.ServeMux -
 Config - конфиг с указанием порта и SHUTDOWN
 */
 type HTTPServer struct {
-	mux *http.ServeMux
-	config Config
-	log *logger.Logger
+	mux        *http.ServeMux
+	config     Config
+	log        *logger.Logger
 	middleware []middleware.Middleware
+}
+
+// RegisterRoutes registers public routes that are not tied to an API version,
+// such as liveness and readiness probes.
+func (s *HTTPServer) RegisterRoutes(routes ...Route) {
+	for _, route := range routes {
+		pattern := fmt.Sprintf("%s %s", route.Method, route.Path)
+		s.mux.Handle(pattern, route.WithMiddleware())
+	}
 }
 
 /*
@@ -36,18 +45,18 @@ func NewHTTPServer(
 	middleware ...middleware.Middleware,
 ) *HTTPServer {
 	return &HTTPServer{
-		mux: http.NewServeMux(),
-		config: config,
-		log: log,
+		mux:        http.NewServeMux(),
+		config:     config,
+		log:        log,
 		middleware: middleware,
 	}
 }
 
-/* 
+/*
 При регистрации роутеров проходимся циклом по apiVersionRouters
 У каждго роутера формируем префикс и привязываем все мидлвари
 после этого передаем итерацию след apiVersionRouter
-*/ 
+*/
 func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 	for _, router := range routers {
 		prefix := "/api/" + string(router.apiVersion)
@@ -62,21 +71,25 @@ func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 func (s *HTTPServer) Run(ctx context.Context) error {
 	mux := middleware.ChainMiddleware(s.mux, s.middleware...)
 	/*
-	server := &http.Server - создаётся сервер стандартной библиотеки:
-	Addr определяет адрес прослушивания, например :8080;
-	Handler получает все входящие запросы.
+		server := &http.Server - создаётся сервер стандартной библиотеки:
+		Addr определяет адрес прослушивания, например :8080;
+		Handler получает все входящие запросы.
 	*/
 	server := &http.Server{
-		Addr: s.config.Addr,
-		Handler: mux,
+		Addr:              s.config.Addr,
+		Handler:           mux,
+		ReadHeaderTimeout: s.config.ReadHeaderTimeout,
+		ReadTimeout:       s.config.ReadTimeout,
+		WriteTimeout:      s.config.WriteTimeout,
+		IdleTimeout:       s.config.IdleTimeout,
 	}
 
 	errCh := make(chan error, 1) // создаем канал ошибок
 
-	/* 
-	Запуск сервера происходит в горутине так как 
-	ListenAndServe() это блокирующая функция. 
-	Пока сервер работает, она не возвращает управление.
+	/*
+		Запуск сервера происходит в горутине так как
+		ListenAndServe() это блокирующая функция.
+		Пока сервер работает, она не возвращает управление.
 	*/
 	go func() {
 		defer close(errCh)
@@ -90,11 +103,11 @@ func (s *HTTPServer) Run(ctx context.Context) error {
 
 	select {
 	// Сценарий 1: сервер сам завершился с ошибкой - например, порт занят
-	case err := <- errCh:
+	case err := <-errCh:
 		if err != nil {
 			return fmt.Errorf("listen and serve HTTP: %w", err)
 		}
-	
+
 	// Сценарий 2: приложение получило сигнал остановки - например Cntr + C
 	case <-ctx.Done():
 		shutDownCtx, cancel := context.WithTimeout(
@@ -114,7 +127,6 @@ func (s *HTTPServer) Run(ctx context.Context) error {
 	return nil
 }
 
-
 /*
 
 POST /api/v1/health
@@ -128,12 +140,12 @@ StripPrefix получает "/health"
 h.GetHealth
 
 
-При получении запроса POST /api/v1/health главный ServeMux сервера 
-находит зарегистрированный префикс /api/v1/ и передаёт запрос 
-обработчику, созданному через StripPrefix. 
-StripPrefix удаляет из пути /api/v1, после чего получается 
-POST /health, и передаёт изменённый запрос в APIVersionRouter. 
-Встроенный в него ServeMux ищет сохранённый маршрут 
-POST /health, находит связанный с ним handler h.GetHealth и 
+При получении запроса POST /api/v1/health главный ServeMux сервера
+находит зарегистрированный префикс /api/v1/ и передаёт запрос
+обработчику, созданному через StripPrefix.
+StripPrefix удаляет из пути /api/v1, после чего получается
+POST /health, и передаёт изменённый запрос в APIVersionRouter.
+Встроенный в него ServeMux ищет сохранённый маршрут
+POST /health, находит связанный с ним handler h.GetHealth и
 вызывает его для обработки запроса.
 */
