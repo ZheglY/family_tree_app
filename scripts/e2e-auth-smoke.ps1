@@ -797,6 +797,84 @@ try {
         throw "Media deletion did not clear the primary photo and increment the person version"
     }
 
+    $exportClientRequestID = [guid]::NewGuid().ToString()
+    $exportBody = @{
+        client_request_id = $exportClientRequestID
+        format = "json_backup"
+    } | ConvertTo-Json -Compress
+    $createdExport = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/exports" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $exportBody
+    if (-not $createdExport.created -or $createdExport.export.status -ne "queued") {
+        throw "JSON export job was not created in queued state"
+    }
+    $exportID = $createdExport.export.id
+    $retriedExport = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/exports" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $exportBody
+    if ($retriedExport.created -or $retriedExport.export.id -ne $exportID) {
+        throw "JSON export creation is not idempotent"
+    }
+    $completedExport = $null
+    for ($attempt = 0; $attempt -lt 80; $attempt++) {
+        $currentExport = Invoke-RestMethod `
+            -Method Get `
+            -Uri "$baseURL/api/v1/trees/$treeID/exports/$exportID" `
+            -Headers $authorization
+        if ($currentExport.export.status -eq "completed") {
+            $completedExport = $currentExport
+            break
+        }
+        if ($currentExport.export.status -eq "failed") {
+            throw "JSON export generation failed: $($currentExport.export.error_code)"
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if ($null -eq $completedExport -or $completedExport.export.progress -ne 100) {
+        throw "JSON export worker did not complete the job"
+    }
+    $exportDownload = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/exports/$exportID/download" `
+        -Headers $authorization
+    $manifestBytes = Get-PresignedBytes -Download $exportDownload.download
+    $manifestJSON = [System.Text.Encoding]::UTF8.GetString($manifestBytes)
+    $manifest = $manifestJSON | ConvertFrom-Json
+    if ($manifest.schema.name -ne "family_tree_backup" -or
+        $manifest.schema.version -ne 1 -or
+        $manifest.tree.id -ne $treeID -or
+        ($manifest.persons | Where-Object { $_.id -eq $personID }).Count -ne 1) {
+        throw "Downloaded JSON manifest does not contain the versioned family tree snapshot"
+    }
+    $exportHistory = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/exports?limit=10" `
+        -Headers $authorization
+    if (($exportHistory.items | Where-Object { $_.id -eq $exportID }).Count -ne 1) {
+        throw "Export history did not return the generated manifest"
+    }
+    $deletedExport = Invoke-WebRequest `
+        -Method Delete `
+        -Uri "$baseURL/api/v1/trees/$treeID/exports/$exportID" `
+        -Headers $authorization
+    if ($deletedExport.StatusCode -ne 204) {
+        throw "Export delete returned $($deletedExport.StatusCode), want 204"
+    }
+    $downloadAfterExportDelete = Invoke-WebRequest `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/exports/$exportID/download" `
+        -Headers $authorization `
+        -SkipHttpErrorCheck
+    if ($downloadAfterExportDelete.StatusCode -ne 409) {
+        throw "Export download after delete returned $($downloadAfterExportDelete.StatusCode), want 409"
+    }
+
     $secondLoginResponse = Invoke-WebRequest `
         -Method Post `
         -Uri "$baseURL/api/v1/auth/login" `
@@ -1004,6 +1082,9 @@ try {
         media_lifecycle_version = $updatedMedia.media.version
         deleted_media_status = $deletedMedia.StatusCode
         person_version_after_media = $personAfterMediaDelete.person.version
+        export_schema_version = $manifest.schema.version
+        export_status = $completedExport.export.status
+        deleted_export_download = $downloadAfterExportDelete.StatusCode
         cyclic_relation_status = $cycleResponse.StatusCode
         deleted_relation_status = $deletedRelation.StatusCode
         sessions_before_revoke = $sessions.items.Count

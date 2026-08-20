@@ -1,0 +1,104 @@
+package domain
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+const (
+	FormatJSONBackup = "json_backup"
+
+	StatusQueued    = "queued"
+	StatusRunning   = "running"
+	StatusCompleted = "completed"
+	StatusFailed    = "failed"
+	StatusExpired   = "expired"
+
+	ManifestSchemaName    = "family_tree_backup"
+	ManifestSchemaVersion = 1
+)
+
+var (
+	ErrInvalidExport           = errors.New("invalid export")
+	ErrExportNotFound          = errors.New("export was not found")
+	ErrExportAccessDenied      = errors.New("export access denied")
+	ErrExportRequestConflict   = errors.New("export request conflict")
+	ErrExportStateConflict     = errors.New("export state conflict")
+	ErrExportResultUnavailable = errors.New("export result is unavailable")
+	ErrExportTreeUnavailable   = errors.New("export tree is unavailable")
+)
+
+type Export struct {
+	ID                   uuid.UUID
+	TreeID               uuid.UUID
+	ClientRequestID      uuid.UUID
+	RequestedBy          uuid.UUID
+	Format               string
+	SchemaVersion        int
+	Parameters           json.RawMessage
+	Status               string
+	Progress             int
+	ResultObjectKey      string
+	ResultMIMEType       string
+	ResultSizeBytes      int64
+	ResultChecksumSHA256 string
+	ErrorCode            string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	StartedAt            *time.Time
+	FinishedAt           *time.Time
+	ExpiresAt            *time.Time
+}
+
+type CreateValues struct {
+	ClientRequestID uuid.UUID
+	Format          string
+}
+
+type CleanupCandidate struct {
+	TreeID          uuid.UUID
+	ExportID        uuid.UUID
+	ResultObjectKey string
+}
+
+func New(
+	id uuid.UUID,
+	treeID uuid.UUID,
+	requestedBy uuid.UUID,
+	values CreateValues,
+	now time.Time,
+) (Export, error) {
+	format := strings.TrimSpace(values.Format)
+	if id == uuid.Nil || treeID == uuid.Nil || requestedBy == uuid.Nil ||
+		values.ClientRequestID == uuid.Nil || format != FormatJSONBackup || now.IsZero() {
+		return Export{}, ErrInvalidExport
+	}
+	parameters := json.RawMessage(`{}`)
+	return Export{
+		ID:              id,
+		TreeID:          treeID,
+		ClientRequestID: values.ClientRequestID,
+		RequestedBy:     requestedBy,
+		Format:          format,
+		SchemaVersion:   ManifestSchemaVersion,
+		Parameters:      parameters,
+		Status:          StatusQueued,
+		Progress:        0,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}, nil
+}
+
+func ResultFilename(value Export) string {
+	return fmt.Sprintf("family-tree-%s-export.json", value.TreeID)
+}
+
+func CanDownload(value Export, now time.Time) bool {
+	return value.Status == StatusCompleted && value.ExpiresAt != nil && now.Before(*value.ExpiresAt) &&
+		value.ResultObjectKey != ""
+}

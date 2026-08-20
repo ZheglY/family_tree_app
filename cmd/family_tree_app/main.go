@@ -17,6 +17,9 @@ import (
 	authratelimit "github.com/ZheglY/family_tree_app/internal/features/auth/ratelimit"
 	authservice "github.com/ZheglY/family_tree_app/internal/features/auth/service"
 	authhttp "github.com/ZheglY/family_tree_app/internal/features/auth/transport"
+	exportpostgres "github.com/ZheglY/family_tree_app/internal/features/exports/repository/postgres"
+	exportservice "github.com/ZheglY/family_tree_app/internal/features/exports/service"
+	exporthttp "github.com/ZheglY/family_tree_app/internal/features/exports/transport"
 	healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
 	healthservice "github.com/ZheglY/family_tree_app/internal/features/health/service"
 	healthhttp "github.com/ZheglY/family_tree_app/internal/features/health/transport"
@@ -169,6 +172,11 @@ func main() {
 	)
 	mediaTransportHTTP := mediahttp.NewHandler(mediaService, requireAccess)
 
+	log.Debug("initializing features", zap.String("feature", "exports"))
+	exportRepository := exportpostgres.New(database.Native())
+	exportService := exportservice.New(exportRepository, treeRepository, objectStorage)
+	exportTransportHTTP := exporthttp.NewHandler(exportService, requireAccess)
+
 	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
 	httpConfig := server.NewConfigMust()
@@ -204,6 +212,7 @@ func main() {
 	apiV1Router.RegisterRoutes(relationTransportHTTP.Routes()...)
 	apiV1Router.RegisterRoutes(unionTransportHTTP.Routes()...)
 	apiV1Router.RegisterRoutes(mediaTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(exportTransportHTTP.Routes()...)
 	httpServer.RegisterAPIRouters(apiV1Router)
 
 	if err := httpServer.Run(ctx); err != nil {
