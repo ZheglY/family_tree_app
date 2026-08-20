@@ -1,6 +1,6 @@
 # Export HTTP API
 
-Статус: реализован первый вертикальный срез Этапа 10 — `json_backup` schema v1 без бинарных файлов. Все пути имеют префикс `/api/v1`, требуют Bearer access token и активного membership дерева.
+Статус: реализованы первые два вертикальных среза Этапа 10 — `json_backup` и `zip_backup` schema v1. Все пути имеют префикс `/api/v1`, требуют Bearer access token и активного membership дерева.
 
 ## Права и состояния
 
@@ -42,6 +42,13 @@
 
 Создание `export_jobs`, `export.generate` и audit entry выполняется одной PostgreSQL-транзакцией.
 
+Поддерживаемые форматы:
+
+- `json_backup` — один JSON manifest без бинарных файлов, MIME результата `application/json`;
+- `zip_backup` — `manifest.json`, `checksums.sha256`, доступные оригиналы и варианты активных `ready` media, MIME результата `application/zip`.
+
+В ZIP используются только UUID-based пути `media/{mediaID}/...`; пользовательское имя файла не становится ZIP path. Перед упаковкой worker повторно проверяет размер и SHA-256 каждого объекта. Суммарный входной объём ограничен `EXPORT_MAX_ARCHIVE_BYTES` (по умолчанию 256 MiB); превышение завершает задание с `error_code: archive_too_large`.
+
 ## 2. История и статус
 
 - `GET /trees/{treeID}/exports?cursor=...&limit=20`;
@@ -78,4 +85,4 @@
 
 Корневой объект содержит `schema`, `export`, `tree` и массивы `members`, `persons`, `person_names`, `parent_child_relations`, `unions`, `union_members`, `media_assets`, `media_variants`, `person_media`.
 
-Manifest — консистентный repeatable-read snapshot. В него входят мягко удалённые доменные записи, необходимые будущему restore. Не входят бинарные файлы, S3 object keys, audit log, background jobs и секреты. Импорт/restore пока не объявлен готовым; следующий формат — ZIP backup с файлами и checksums.
+Manifest — консистентный repeatable-read snapshot. В него входят мягко удалённые доменные записи, необходимые будущему restore. Не входят S3 object keys, audit log, background jobs и секреты. В `zip_backup` поля `archive_path` связывают активные ready media с файлами внутри ZIP; в `json_backup` эти поля отсутствуют. Импорт/restore пока не объявлен готовым: следующий шаг — автоматическая проверка восстановления ZIP на чистой БД.

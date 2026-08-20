@@ -58,13 +58,13 @@ func (repository *Repository) AcquireForGeneration(
 func (repository *Repository) LoadManifest(
 	ctx context.Context,
 	export domain.Export,
-) (manifest.Manifest, error) {
+) (manifest.Snapshot, error) {
 	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{
 		IsoLevel:   pgx.RepeatableRead,
 		AccessMode: pgx.ReadOnly,
 	})
 	if err != nil {
-		return manifest.Manifest{}, fmt.Errorf("begin manifest snapshot: %w", err)
+		return manifest.Snapshot{}, fmt.Errorf("begin manifest snapshot: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	result := manifest.Manifest{
@@ -94,30 +94,31 @@ func (repository *Repository) LoadManifest(
 		&result.Tree.DeletedAt, &result.Tree.Version,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return manifest.Manifest{}, domain.ErrExportTreeUnavailable
+		return manifest.Snapshot{}, domain.ErrExportTreeUnavailable
 	}
 	if err != nil {
-		return manifest.Manifest{}, fmt.Errorf("load export tree snapshot: %w", err)
+		return manifest.Snapshot{}, fmt.Errorf("load export tree snapshot: %w", err)
 	}
 	if err := loadMembers(ctx, tx, export.TreeID, &result); err != nil {
-		return manifest.Manifest{}, err
+		return manifest.Snapshot{}, err
 	}
 	if err := loadPersons(ctx, tx, export.TreeID, &result); err != nil {
-		return manifest.Manifest{}, err
+		return manifest.Snapshot{}, err
 	}
 	if err := loadRelations(ctx, tx, export.TreeID, &result); err != nil {
-		return manifest.Manifest{}, err
+		return manifest.Snapshot{}, err
 	}
 	if err := loadUnions(ctx, tx, export.TreeID, &result); err != nil {
-		return manifest.Manifest{}, err
+		return manifest.Snapshot{}, err
 	}
-	if err := loadMedia(ctx, tx, export.TreeID, &result); err != nil {
-		return manifest.Manifest{}, err
+	files, err := loadMedia(ctx, tx, export.TreeID, &result)
+	if err != nil {
+		return manifest.Snapshot{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return manifest.Manifest{}, fmt.Errorf("commit manifest snapshot: %w", err)
+		return manifest.Snapshot{}, fmt.Errorf("commit manifest snapshot: %w", err)
 	}
-	return result, nil
+	return manifest.Snapshot{Manifest: result, Files: files}, nil
 }
 
 func loadMembers(ctx context.Context, tx pgx.Tx, treeID uuid.UUID, result *manifest.Manifest) error {
@@ -246,51 +247,74 @@ func loadUnions(ctx context.Context, tx pgx.Tx, treeID uuid.UUID, result *manife
 	return rows.Err()
 }
 
-func loadMedia(ctx context.Context, tx pgx.Tx, treeID uuid.UUID, result *manifest.Manifest) error {
+func loadMedia(
+	ctx context.Context,
+	tx pgx.Tx,
+	treeID uuid.UUID,
+	result *manifest.Manifest,
+) ([]manifest.SourceFile, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id, kind, status, original_filename, mime_type, size_bytes, checksum_sha256,
+		SELECT id, kind, status, object_key, original_filename, mime_type, size_bytes, checksum_sha256,
 			width, height, caption, description, uploaded_by, uploaded_at, created_at,
 			updated_at, deleted_at, processed_at, version
 		FROM media_assets WHERE tree_id = $1 ORDER BY created_at, id
 	`, treeID)
 	if err != nil {
-		return fmt.Errorf("load export media: %w", err)
+		return nil, fmt.Errorf("load export media: %w", err)
 	}
+	files := make([]manifest.SourceFile, 0)
+	activeMedia := make(map[uuid.UUID]bool)
 	for rows.Next() {
 		var item manifest.MediaAsset
-		if err := rows.Scan(&item.ID, &item.Kind, &item.Status, &item.OriginalFilename, &item.MIMEType,
+		var objectKey string
+		if err := rows.Scan(&item.ID, &item.Kind, &item.Status, &objectKey, &item.OriginalFilename, &item.MIMEType,
 			&item.SizeBytes, &item.ChecksumSHA256, &item.Width, &item.Height, &item.Caption,
 			&item.Description, &item.UploadedBy, &item.UploadedAt, &item.CreatedAt, &item.UpdatedAt,
 			&item.DeletedAt, &item.ProcessedAt, &item.Version); err != nil {
 			rows.Close()
-			return fmt.Errorf("scan export media: %w", err)
+			return nil, fmt.Errorf("scan export media: %w", err)
 		}
 		result.MediaAssets = append(result.MediaAssets, item)
+		if item.Status == "ready" && item.DeletedAt == nil {
+			activeMedia[item.ID] = true
+			files = append(files, manifest.SourceFile{
+				MediaID: item.ID, ArchivePath: fmt.Sprintf("media/%s/original", item.ID),
+				ObjectKey: objectKey, SizeBytes: item.SizeBytes, ChecksumSHA256: item.ChecksumSHA256,
+			})
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return fmt.Errorf("iterate export media: %w", err)
+		return nil, fmt.Errorf("iterate export media: %w", err)
 	}
 	rows.Close()
 	rows, err = tx.Query(ctx, `
-		SELECT id, media_id, kind, mime_type, size_bytes, checksum_sha256, width, height, created_at
+		SELECT id, media_id, kind, object_key, mime_type, size_bytes, checksum_sha256, width, height, created_at
 		FROM media_variants WHERE tree_id = $1 ORDER BY created_at, id
 	`, treeID)
 	if err != nil {
-		return fmt.Errorf("load export media variants: %w", err)
+		return nil, fmt.Errorf("load export media variants: %w", err)
 	}
 	for rows.Next() {
 		var item manifest.MediaVariant
-		if err := rows.Scan(&item.ID, &item.MediaID, &item.Kind, &item.MIMEType, &item.SizeBytes,
+		var objectKey string
+		if err := rows.Scan(&item.ID, &item.MediaID, &item.Kind, &objectKey, &item.MIMEType, &item.SizeBytes,
 			&item.ChecksumSHA256, &item.Width, &item.Height, &item.CreatedAt); err != nil {
 			rows.Close()
-			return fmt.Errorf("scan export media variant: %w", err)
+			return nil, fmt.Errorf("scan export media variant: %w", err)
 		}
 		result.MediaVariants = append(result.MediaVariants, item)
+		if activeMedia[item.MediaID] {
+			files = append(files, manifest.SourceFile{
+				MediaID: item.MediaID, VariantKind: item.Kind,
+				ArchivePath: fmt.Sprintf("media/%s/variants/%s", item.MediaID, item.Kind),
+				ObjectKey:   objectKey, SizeBytes: item.SizeBytes, ChecksumSHA256: item.ChecksumSHA256,
+			})
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return fmt.Errorf("iterate export media variants: %w", err)
+		return nil, fmt.Errorf("iterate export media variants: %w", err)
 	}
 	rows.Close()
 	rows, err = tx.Query(ctx, `
@@ -298,17 +322,20 @@ func loadMedia(ctx context.Context, tx pgx.Tx, treeID uuid.UUID, result *manifes
 		FROM person_media WHERE tree_id = $1 ORDER BY created_at, person_id, media_id
 	`, treeID)
 	if err != nil {
-		return fmt.Errorf("load export person media: %w", err)
+		return nil, fmt.Errorf("load export person media: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var item manifest.PersonMediaAttachment
 		if err := rows.Scan(&item.PersonID, &item.MediaID, &item.Role, &item.SortOrder, &item.CreatedBy, &item.CreatedAt); err != nil {
-			return fmt.Errorf("scan export person media: %w", err)
+			return nil, fmt.Errorf("scan export person media: %w", err)
 		}
 		result.PersonMedia = append(result.PersonMedia, item)
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate export person media: %w", err)
+	}
+	return files, nil
 }
 
 func (repository *Repository) MarkCompleted(

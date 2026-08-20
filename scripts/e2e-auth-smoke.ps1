@@ -771,6 +771,85 @@ try {
     if ($primaryMediaAgain.person_version -ne 7 -or $reattachedMedia.attachment.media_id -ne $mediaID) {
         throw "Media could not be reattached and selected as primary"
     }
+
+    $zipExportBody = @{
+        client_request_id = [guid]::NewGuid().ToString()
+        format = "zip_backup"
+    } | ConvertTo-Json -Compress
+    $createdZIPExport = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/exports" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $zipExportBody
+    $zipExportID = $createdZIPExport.export.id
+    $completedZIPExport = $null
+    for ($attempt = 0; $attempt -lt 80; $attempt++) {
+        $currentZIPExport = Invoke-RestMethod `
+            -Method Get `
+            -Uri "$baseURL/api/v1/trees/$treeID/exports/$zipExportID" `
+            -Headers $authorization
+        if ($currentZIPExport.export.status -eq "completed") {
+            $completedZIPExport = $currentZIPExport
+            break
+        }
+        if ($currentZIPExport.export.status -eq "failed") {
+            throw "ZIP export generation failed: $($currentZIPExport.export.error_code)"
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if ($null -eq $completedZIPExport -or $completedZIPExport.export.result_mime_type -ne "application/zip") {
+        throw "ZIP export worker did not complete the job"
+    }
+    $zipDownload = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/exports/$zipExportID/download" `
+        -Headers $authorization
+    $zipBytes = Get-PresignedBytes -Download $zipDownload.download
+    $zipStream = [System.IO.MemoryStream]::new()
+    $zipStream.Write($zipBytes, 0, $zipBytes.Length)
+    $zipStream.Position = 0
+    $zipArchive = [System.IO.Compression.ZipArchive]::new(
+        $zipStream,
+        [System.IO.Compression.ZipArchiveMode]::Read,
+        $false
+    )
+    try {
+        $zipManifestEntry = $zipArchive.GetEntry("manifest.json")
+        $zipChecksumsEntry = $zipArchive.GetEntry("checksums.sha256")
+        if ($null -eq $zipManifestEntry -or $null -eq $zipChecksumsEntry) {
+            throw "ZIP backup does not contain manifest and checksums"
+        }
+        $manifestReader = [System.IO.StreamReader]::new($zipManifestEntry.Open())
+        try { $zipManifest = ($manifestReader.ReadToEnd() | ConvertFrom-Json) } finally { $manifestReader.Dispose() }
+        $checksumReader = [System.IO.StreamReader]::new($zipChecksumsEntry.Open())
+        try { $zipChecksums = $checksumReader.ReadToEnd() } finally { $checksumReader.Dispose() }
+        $zipMedia = $zipManifest.media_assets | Where-Object { $_.id -eq $mediaID } | Select-Object -First 1
+        if ($null -eq $zipMedia -or [string]::IsNullOrWhiteSpace($zipMedia.archive_path)) {
+            throw "ZIP manifest does not reference the ready media original"
+        }
+        $zipMediaEntry = $zipArchive.GetEntry([string]$zipMedia.archive_path)
+        if ($null -eq $zipMediaEntry -or $zipMediaEntry.Length -ne $mediaBytes.Length -or
+            -not $zipChecksums.Contains([string]$zipMedia.archive_path)) {
+            throw "ZIP backup does not contain the checksummed media original"
+        }
+        if (($zipManifest.media_variants | Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_.archive_path)
+        }).Count -ne 2) {
+            throw "ZIP backup does not reference both generated media variants"
+        }
+    } finally {
+        $zipArchive.Dispose()
+        $zipStream.Dispose()
+    }
+    $deletedZIPExport = Invoke-WebRequest `
+        -Method Delete `
+        -Uri "$baseURL/api/v1/trees/$treeID/exports/$zipExportID" `
+        -Headers $authorization
+    if ($deletedZIPExport.StatusCode -ne 204) {
+        throw "ZIP export delete returned $($deletedZIPExport.StatusCode), want 204"
+    }
+
     $mediaDeleteBody = @{version = 5} | ConvertTo-Json -Compress
     $deletedMedia = Invoke-WebRequest `
         -Method Delete `
@@ -1084,6 +1163,10 @@ try {
         person_version_after_media = $personAfterMediaDelete.person.version
         export_schema_version = $manifest.schema.version
         export_status = $completedExport.export.status
+        zip_export_status = $completedZIPExport.export.status
+        zip_media_variant_count = ($zipManifest.media_variants | Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_.archive_path)
+        }).Count
         deleted_export_download = $downloadAfterExportDelete.StatusCode
         cyclic_relation_status = $cycleResponse.StatusCode
         deleted_relation_status = $deletedRelation.StatusCode

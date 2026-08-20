@@ -77,11 +77,16 @@ func run(ctx context.Context) error {
 	runner, err := jobworker.New(
 		jobRepository,
 		map[string]jobworker.Handler{
-			mediajob.KindProcess:   processing.NewProcessor(mediaRepository, objectStorage),
-			mediajob.KindCleanup:   processing.NewCleanup(mediaRepository, objectStorage),
-			exportjob.KindGenerate: exportprocessing.NewGenerator(exportRepository, objectStorage, exportConfig.ResultTTL),
-			exportjob.KindCleanup:  exportprocessing.NewCleanup(exportRepository, objectStorage),
-			exportjob.KindDelete:   exportprocessing.NewDeleter(exportRepository, objectStorage),
+			mediajob.KindProcess: processing.NewProcessor(mediaRepository, objectStorage),
+			mediajob.KindCleanup: processing.NewCleanup(mediaRepository, objectStorage),
+			exportjob.KindGenerate: exportprocessing.NewGenerator(
+				exportRepository,
+				objectStorage,
+				exportConfig.ResultTTL,
+				exportConfig.MaxArchiveBytes,
+			),
+			exportjob.KindCleanup: exportprocessing.NewCleanup(exportRepository, objectStorage),
+			exportjob.KindDelete:  exportprocessing.NewDeleter(exportRepository, objectStorage),
 		},
 		workerConfig,
 		log,

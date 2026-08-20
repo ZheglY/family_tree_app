@@ -12,6 +12,7 @@ import (
 
 const (
 	FormatJSONBackup = "json_backup"
+	FormatZIPBackup  = "zip_backup"
 
 	StatusQueued    = "queued"
 	StatusRunning   = "running"
@@ -31,6 +32,8 @@ var (
 	ErrExportStateConflict     = errors.New("export state conflict")
 	ErrExportResultUnavailable = errors.New("export result is unavailable")
 	ErrExportTreeUnavailable   = errors.New("export tree is unavailable")
+	ErrExportArchiveTooLarge   = errors.New("export archive is too large")
+	ErrExportSourceInvalid     = errors.New("export source file is invalid")
 )
 
 type Export struct {
@@ -75,7 +78,7 @@ func New(
 ) (Export, error) {
 	format := strings.TrimSpace(values.Format)
 	if id == uuid.Nil || treeID == uuid.Nil || requestedBy == uuid.Nil ||
-		values.ClientRequestID == uuid.Nil || format != FormatJSONBackup || now.IsZero() {
+		values.ClientRequestID == uuid.Nil || !supportedFormat(format) || now.IsZero() {
 		return Export{}, ErrInvalidExport
 	}
 	parameters := json.RawMessage(`{}`)
@@ -95,10 +98,17 @@ func New(
 }
 
 func ResultFilename(value Export) string {
+	if value.Format == FormatZIPBackup {
+		return fmt.Sprintf("family-tree-%s-backup.zip", value.TreeID)
+	}
 	return fmt.Sprintf("family-tree-%s-export.json", value.TreeID)
 }
 
 func CanDownload(value Export, now time.Time) bool {
 	return value.Status == StatusCompleted && value.ExpiresAt != nil && now.Before(*value.ExpiresAt) &&
 		value.ResultObjectKey != ""
+}
+
+func supportedFormat(format string) bool {
+	return format == FormatJSONBackup || format == FormatZIPBackup
 }

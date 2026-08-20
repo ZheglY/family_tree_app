@@ -1,9 +1,15 @@
 package processing
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +23,7 @@ import (
 
 type processingRepositoryStub struct {
 	export     domain.Export
-	manifest   manifest.Manifest
+	snapshot   manifest.Snapshot
 	completed  bool
 	failedCode string
 	candidates []domain.CleanupCandidate
@@ -38,8 +44,8 @@ func (stub *processingRepositoryStub) AcquireForGeneration(
 	return stub.export, nil
 }
 
-func (stub *processingRepositoryStub) LoadManifest(context.Context, domain.Export) (manifest.Manifest, error) {
-	return stub.manifest, stub.loadErr
+func (stub *processingRepositoryStub) LoadManifest(context.Context, domain.Export) (manifest.Snapshot, error) {
+	return stub.snapshot, stub.loadErr
 }
 
 func (stub *processingRepositoryStub) MarkCompleted(
@@ -94,8 +100,22 @@ type processorObjectStoreStub struct {
 	putErr  error
 }
 
-func (stub *processorObjectStoreStub) DownloadObject(context.Context, string, int64) ([]byte, storage.ObjectInfo, error) {
-	return nil, storage.ObjectInfo{}, errors.New("not implemented")
+func (stub *processorObjectStoreStub) DownloadObject(
+	_ context.Context,
+	key string,
+	maxBytes int64,
+) ([]byte, storage.ObjectInfo, error) {
+	object, exists := stub.objects[key]
+	if !exists {
+		return nil, storage.ObjectInfo{}, storage.ErrObjectNotFound
+	}
+	if int64(len(object.Body)) > maxBytes {
+		return nil, storage.ObjectInfo{}, errors.New("object exceeds limit")
+	}
+	return object.Body, storage.ObjectInfo{
+		ContentType: object.ContentType, SizeBytes: int64(len(object.Body)),
+		ChecksumSHA256: object.ChecksumSHA256,
+	}, nil
 }
 
 func (stub *processorObjectStoreStub) PutObject(_ context.Context, input storage.PutInput) (storage.ObjectInfo, error) {
@@ -125,7 +145,7 @@ func TestGeneratorCreatesVersionedManifest(t *testing.T) {
 	}
 	repository := &processingRepositoryStub{
 		export: export,
-		manifest: manifest.Manifest{
+		snapshot: manifest.Snapshot{Manifest: manifest.Manifest{
 			Schema:  manifest.Schema{Name: domain.ManifestSchemaName, Version: domain.ManifestSchemaVersion},
 			Export:  manifest.ExportMetadata{ID: export.ID, Format: export.Format},
 			Tree:    manifest.Tree{ID: export.TreeID, Name: "Род Волконских"},
@@ -133,10 +153,10 @@ func TestGeneratorCreatesVersionedManifest(t *testing.T) {
 			ParentChildRelations: []manifest.ParentChildRelation{}, Unions: []manifest.FamilyUnion{},
 			UnionMembers: []manifest.UnionMember{}, MediaAssets: []manifest.MediaAsset{},
 			MediaVariants: []manifest.MediaVariant{}, PersonMedia: []manifest.PersonMediaAttachment{},
-		},
+		}},
 	}
 	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
-	generator := NewGenerator(repository, objectStore, 24*time.Hour)
+	generator := NewGenerator(repository, objectStore, 24*time.Hour, 16*1024*1024)
 	generator.now = func() time.Time { return now }
 	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
 	if err := generator.Handle(context.Background(), jobs.Job{
@@ -171,7 +191,7 @@ func TestGeneratorMarksPermanentFailure(t *testing.T) {
 	repository := &processingRepositoryStub{export: export, loadErr: errors.New("database unavailable")}
 	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
 	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
-	err := NewGenerator(repository, objectStore, time.Hour).Handle(context.Background(), jobs.Job{
+	err := NewGenerator(repository, objectStore, time.Hour, 16*1024*1024).Handle(context.Background(), jobs.Job{
 		Kind: exportjob.KindGenerate, Payload: payload, Attempts: 5, MaxAttempts: 5,
 	})
 	if err == nil || repository.failedCode != "generation_failed" {
@@ -179,10 +199,132 @@ func TestGeneratorMarksPermanentFailure(t *testing.T) {
 	}
 }
 
+func TestGeneratorCreatesZIPBackupWithFilesAndChecksums(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
+	export, err := domain.New(uuid.New(), uuid.New(), uuid.New(), domain.CreateValues{
+		ClientRequestID: uuid.New(), Format: domain.FormatZIPBackup,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mediaID := uuid.New()
+	sourceBody := []byte("private family document")
+	sourceChecksum := sha256.Sum256(sourceBody)
+	sourceChecksumHex := hex.EncodeToString(sourceChecksum[:])
+	source := manifest.SourceFile{
+		MediaID: mediaID, ArchivePath: "media/" + mediaID.String() + "/original",
+		ObjectKey: "private-source", SizeBytes: int64(len(sourceBody)), ChecksumSHA256: sourceChecksumHex,
+	}
+	repository := &processingRepositoryStub{
+		export: export,
+		snapshot: manifest.Snapshot{
+			Manifest: manifest.Manifest{
+				Schema:  manifest.Schema{Name: domain.ManifestSchemaName, Version: 1},
+				Export:  manifest.ExportMetadata{ID: export.ID, Format: export.Format},
+				Tree:    manifest.Tree{ID: export.TreeID, Name: "Род Волконских"},
+				Members: []manifest.TreeMember{}, Persons: []manifest.Person{}, PersonNames: []manifest.PersonName{},
+				ParentChildRelations: []manifest.ParentChildRelation{}, Unions: []manifest.FamilyUnion{},
+				UnionMembers: []manifest.UnionMember{},
+				MediaAssets: []manifest.MediaAsset{{
+					ID: mediaID, Status: "ready", SizeBytes: int64(len(sourceBody)), ChecksumSHA256: sourceChecksumHex,
+				}},
+				MediaVariants: []manifest.MediaVariant{}, PersonMedia: []manifest.PersonMediaAttachment{},
+			},
+			Files: []manifest.SourceFile{source},
+		},
+	}
+	objectStore := &processorObjectStoreStub{objects: map[string]storage.PutInput{
+		source.ObjectKey: {
+			ObjectKey: source.ObjectKey, ContentType: "application/pdf",
+			ChecksumSHA256: sourceChecksumHex, Body: sourceBody,
+		},
+	}}
+	generator := NewGenerator(repository, objectStore, 24*time.Hour, 16*1024*1024)
+	generator.now = func() time.Time { return now }
+	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
+	if err := generator.Handle(context.Background(), jobs.Job{
+		Kind: exportjob.KindGenerate, Payload: payload, Attempts: 1, MaxAttempts: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var archiveBody []byte
+	for key, object := range objectStore.objects {
+		if strings.HasSuffix(key, ".zip") {
+			archiveBody = object.Body
+		}
+	}
+	if len(archiveBody) == 0 || repository.export.ResultMIMEType != archiveMIMEType {
+		t.Fatalf("archive was not stored: export = %#v", repository.export)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(archiveBody), int64(len(archiveBody)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := make(map[string][]byte)
+	for _, file := range reader.File {
+		opened, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(opened)
+		_ = opened.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries[file.Name] = body
+	}
+	if !bytes.Equal(entries[source.ArchivePath], sourceBody) ||
+		!strings.Contains(string(entries["checksums.sha256"]), sourceChecksumHex+"  "+source.ArchivePath) {
+		t.Fatalf("archive entries = %#v", entries)
+	}
+	var archivedManifest manifest.Manifest
+	if err := json.Unmarshal(entries["manifest.json"], &archivedManifest); err != nil {
+		t.Fatal(err)
+	}
+	if archivedManifest.MediaAssets[0].ArchivePath != source.ArchivePath {
+		t.Fatalf("archived manifest = %#v", archivedManifest)
+	}
+}
+
+func TestGeneratorRejectsOversizedZIPBeforeDownloadingFiles(t *testing.T) {
+	t.Parallel()
+	export, _ := domain.New(uuid.New(), uuid.New(), uuid.New(), domain.CreateValues{
+		ClientRequestID: uuid.New(), Format: domain.FormatZIPBackup,
+	}, time.Now().UTC())
+	repository := &processingRepositoryStub{
+		export: export,
+		snapshot: manifest.Snapshot{
+			Manifest: manifest.Manifest{
+				Schema:  manifest.Schema{Name: domain.ManifestSchemaName, Version: 1},
+				Export:  manifest.ExportMetadata{ID: export.ID, Format: export.Format},
+				Tree:    manifest.Tree{ID: export.TreeID},
+				Members: []manifest.TreeMember{}, Persons: []manifest.Person{}, PersonNames: []manifest.PersonName{},
+				ParentChildRelations: []manifest.ParentChildRelation{}, Unions: []manifest.FamilyUnion{},
+				UnionMembers: []manifest.UnionMember{}, MediaAssets: []manifest.MediaAsset{},
+				MediaVariants: []manifest.MediaVariant{}, PersonMedia: []manifest.PersonMediaAttachment{},
+			},
+			Files: []manifest.SourceFile{{
+				MediaID: uuid.New(), ArchivePath: "media/id/original", ObjectKey: "too-large",
+				SizeBytes: 2 * 1024 * 1024, ChecksumSHA256: strings.Repeat("a", 64),
+			}},
+		},
+	}
+	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
+	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
+	err := NewGenerator(repository, objectStore, time.Hour, 1024*1024).Handle(
+		context.Background(),
+		jobs.Job{Kind: exportjob.KindGenerate, Payload: payload, Attempts: 1, MaxAttempts: 5},
+	)
+	if err != nil || repository.failedCode != "archive_too_large" || len(objectStore.objects) != 0 {
+		t.Fatalf("error = %v, failure code = %q, objects = %#v", err, repository.failedCode, objectStore.objects)
+	}
+}
+
 func TestCleanupAndDeletionRemovePrivateResult(t *testing.T) {
 	t.Parallel()
 	treeID, exportID := uuid.New(), uuid.New()
-	key := ResultObjectKey(treeID, exportID, "checksum")
+	key := ResultObjectKey(treeID, exportID, domain.FormatJSONBackup, "checksum")
 	candidate := domain.CleanupCandidate{TreeID: treeID, ExportID: exportID, ResultObjectKey: key}
 	repository := &processingRepositoryStub{candidates: []domain.CleanupCandidate{candidate}}
 	objectStore := &processorObjectStoreStub{objects: map[string]storage.PutInput{key: {ObjectKey: key}}}

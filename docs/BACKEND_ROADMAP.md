@@ -739,7 +739,7 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 ### Этап 10. Export
 
-Статус: в процессе. Первый вертикальный срез (versioned JSON manifest без файлов, история заданий, worker, private S3 download и cleanup) завершён 21 августа 2026 года.
+Статус: в процессе. Срезы versioned JSON manifest и ZIP backup с файлами/checksums завершены 21 августа 2026 года; автоматическая проверка восстановления ещё не реализована.
 
 Порядок форматов:
 
@@ -874,6 +874,6 @@ Family API ограничивает публичные auth-попытки по 
 
 Этап 9 завершён: отдельный `cmd/worker` использует PostgreSQL-backed очередь с `FOR UPDATE SKIP LOCKED`, lease/heartbeat, exponential retry, `dead` state и идемпотентными handlers. `media.process` проверяет фактический SHA-256, magic bytes и декодирование, создаёт thumbnail/preview и только затем открывает скачивание и привязки. `media.cleanup` безопасно резервирует просроченные pending и после retention удаляет originals/variants и metadata. Интеграционные тесты покрывают конкурирующий claim, потерю lease, retry/dead и реальный MinIO pipeline.
 
-Этап 10 в процессе: реализован `json_backup` schema v1 без бинарных файлов. Создание export и job атомарно, worker формирует repeatable-read snapshot, сохраняет checksum и приватный S3 object, а API предоставляет tenant-scoped историю и короткоживущую ссылку только requester/Owner. Результат имеет TTL, ручное удаление и периодическую очистку; audit фиксирует создание, скачивание и удаление.
+Этап 10 в процессе: реализованы `json_backup` и `zip_backup` schema v1. Создание export и job атомарно, worker формирует repeatable-read snapshot, сохраняет checksum и приватный S3 object, а API предоставляет tenant-scoped историю и короткоживущую ссылку только requester/Owner. ZIP содержит manifest, checksums и проверенные оригиналы/варианты ready media без раскрытия S3 keys. Результат имеет TTL, ручное удаление и периодическую очистку; audit фиксирует создание, скачивание и удаление.
 
-Следующий малый вертикальный срез: ZIP backup с JSON manifest, оригинальными файлами и checksums, после чего нужен проверяемый restore на чистой БД. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
+Следующий малый вертикальный срез: проверяемый restore ZIP backup на чистой БД; только после него можно заявлять импорт готовым и переходить к визуальным PDF/PNG/SVG. Production mailer и service-to-service аутентификацию завершить до публичного релиза.

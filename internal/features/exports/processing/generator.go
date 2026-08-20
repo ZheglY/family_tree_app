@@ -19,28 +19,33 @@ import (
 
 const manifestMIMEType = "application/json"
 
+const archiveMIMEType = "application/zip"
+
 type GeneratorRepository interface {
 	AcquireForGeneration(context.Context, uuid.UUID, uuid.UUID, time.Time) (domain.Export, error)
-	LoadManifest(context.Context, domain.Export) (manifest.Manifest, error)
+	LoadManifest(context.Context, domain.Export) (manifest.Snapshot, error)
 	MarkCompleted(context.Context, domain.Export, string, string, int64, string, time.Time, time.Time) error
 	MarkFailed(context.Context, domain.Export, string, time.Time) error
 }
 
 type Generator struct {
-	repository  GeneratorRepository
-	objectStore storage.ProcessorObjectStore
-	resultTTL   time.Duration
-	now         func() time.Time
+	repository      GeneratorRepository
+	objectStore     storage.ProcessorObjectStore
+	resultTTL       time.Duration
+	maxArchiveBytes int64
+	now             func() time.Time
 }
 
 func NewGenerator(
 	repository GeneratorRepository,
 	objectStore storage.ProcessorObjectStore,
 	resultTTL time.Duration,
+	maxArchiveBytes int64,
 ) *Generator {
 	return &Generator{
 		repository: repository, objectStore: objectStore, resultTTL: resultTTL,
-		now: func() time.Time { return time.Now().UTC() },
+		maxArchiveBytes: maxArchiveBytes,
+		now:             func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -74,22 +79,38 @@ func (generator *Generator) Handle(ctx context.Context, job jobs.Job) error {
 		}
 		return generator.retryOrFail(ctx, job, export, err)
 	}
-	body, err := json.MarshalIndent(snapshot, "", "  ")
-	if err != nil {
-		return generator.retryOrFail(ctx, job, export, fmt.Errorf("encode export manifest: %w", err))
+	var body []byte
+	var mimeType string
+	switch export.Format {
+	case domain.FormatJSONBackup:
+		body, err = encodeManifest(snapshot.Manifest)
+		mimeType = manifestMIMEType
+	case domain.FormatZIPBackup:
+		body, err = buildZIP(ctx, export, snapshot, generator.objectStore, generator.maxArchiveBytes)
+		mimeType = archiveMIMEType
+	default:
+		err = domain.ErrInvalidExport
 	}
-	body = append(body, '\n')
+	if err != nil {
+		if errors.Is(err, domain.ErrExportArchiveTooLarge) {
+			if markErr := generator.repository.MarkFailed(ctx, export, "archive_too_large", generator.now()); markErr != nil {
+				return errors.Join(err, markErr)
+			}
+			return nil
+		}
+		return generator.retryOrFail(ctx, job, export, err)
+	}
 	checksum := sha256.Sum256(body)
 	checksumHex := hex.EncodeToString(checksum[:])
-	objectKey := ResultObjectKey(export.TreeID, export.ID, checksumHex)
+	objectKey := ResultObjectKey(export.TreeID, export.ID, export.Format, checksumHex)
 	if _, err := generator.objectStore.PutObject(ctx, storage.PutInput{
-		ObjectKey: objectKey, ContentType: manifestMIMEType, ChecksumSHA256: checksumHex, Body: body,
+		ObjectKey: objectKey, ContentType: mimeType, ChecksumSHA256: checksumHex, Body: body,
 	}); err != nil {
 		return generator.retryOrFail(ctx, job, export, err)
 	}
 	now := generator.now()
 	err = generator.repository.MarkCompleted(
-		ctx, export, objectKey, manifestMIMEType, int64(len(body)), checksumHex,
+		ctx, export, objectKey, mimeType, int64(len(body)), checksumHex,
 		now.Add(generator.resultTTL), now,
 	)
 	if errors.Is(err, domain.ErrExportStateConflict) {
@@ -119,6 +140,18 @@ func (generator *Generator) retryOrFail(
 	return cause
 }
 
-func ResultObjectKey(treeID uuid.UUID, exportID uuid.UUID, checksum string) string {
-	return fmt.Sprintf("trees/%s/exports/%s/manifest-%s.json", treeID, exportID, checksum)
+func ResultObjectKey(treeID uuid.UUID, exportID uuid.UUID, format string, checksum string) string {
+	filename := fmt.Sprintf("manifest-%s.json", checksum)
+	if format == domain.FormatZIPBackup {
+		filename = fmt.Sprintf("backup-%s.zip", checksum)
+	}
+	return fmt.Sprintf("trees/%s/exports/%s/%s", treeID, exportID, filename)
+}
+
+func encodeManifest(value manifest.Manifest) ([]byte, error) {
+	body, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode export manifest: %w", err)
+	}
+	return append(body, '\n'), nil
 }

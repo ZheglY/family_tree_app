@@ -21,6 +21,20 @@ type Manifest struct {
 	PersonMedia          []PersonMediaAttachment `json:"person_media"`
 }
 
+type Snapshot struct {
+	Manifest Manifest
+	Files    []SourceFile
+}
+
+type SourceFile struct {
+	MediaID        uuid.UUID
+	VariantKind    string
+	ArchivePath    string
+	ObjectKey      string
+	SizeBytes      int64
+	ChecksumSHA256 string
+}
+
 type Schema struct {
 	Name    string `json:"name"`
 	Version int    `json:"version"`
@@ -143,6 +157,7 @@ type MediaAsset struct {
 	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
 	ProcessedAt      *time.Time `json:"processed_at,omitempty"`
 	Version          int        `json:"version"`
+	ArchivePath      string     `json:"archive_path,omitempty"`
 }
 
 type MediaVariant struct {
@@ -155,6 +170,7 @@ type MediaVariant struct {
 	Width          int       `json:"width"`
 	Height         int       `json:"height"`
 	CreatedAt      time.Time `json:"created_at"`
+	ArchivePath    string    `json:"archive_path,omitempty"`
 }
 
 type PersonMediaAttachment struct {

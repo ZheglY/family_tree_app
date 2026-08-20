@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,5 +38,18 @@ func TestNewExportRejectsUnsupportedFormat(t *testing.T) {
 	}, time.Now().UTC())
 	if !errors.Is(err, ErrInvalidExport) {
 		t.Fatalf("error = %v, want ErrInvalidExport", err)
+	}
+}
+
+func TestNewZIPExportUsesArchiveFilename(t *testing.T) {
+	t.Parallel()
+	export, err := New(uuid.New(), uuid.New(), uuid.New(), CreateValues{
+		ClientRequestID: uuid.New(), Format: FormatZIPBackup,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filename := ResultFilename(export); !strings.HasSuffix(filename, "-backup.zip") {
+		t.Fatalf("filename = %q", filename)
 	}
 }

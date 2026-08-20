@@ -37,27 +37,27 @@ func TestRunnerRollsLatestMigrationDownAndBackUp(t *testing.T) {
 	if err := runner.Down(ctx, 1); err != nil {
 		t.Fatalf("Down() error = %v", err)
 	}
-	if version, err := runner.CurrentVersion(ctx); err != nil || version != 6 {
+	if version, err := runner.CurrentVersion(ctx); err != nil || version != 7 {
 		t.Fatalf("version after down = %d, error = %v", version, err)
 	}
-	var exportsMissing, jobsPresent bool
+	var exportsPresent, jobsPresent bool
 	if err := database.Pool.QueryRow(ctx, `
-		SELECT to_regclass('export_jobs') IS NULL,
+		SELECT to_regclass('export_jobs') IS NOT NULL,
 		       to_regclass('background_jobs') IS NOT NULL
-	`).Scan(&exportsMissing, &jobsPresent); err != nil {
+	`).Scan(&exportsPresent, &jobsPresent); err != nil {
 		t.Fatal(err)
 	}
-	if !exportsMissing || !jobsPresent {
+	if !exportsPresent || !jobsPresent {
 		t.Fatalf(
-			"schema after down: exports missing = %t, jobs present = %t",
-			exportsMissing,
+			"schema after down: exports present = %t, jobs present = %t",
+			exportsPresent,
 			jobsPresent,
 		)
 	}
 	if err := runner.Up(ctx); err != nil {
 		t.Fatalf("second Up() error = %v", err)
 	}
-	if version, err := runner.CurrentVersion(ctx); err != nil || version != 7 {
+	if version, err := runner.CurrentVersion(ctx); err != nil || version != 8 {
 		t.Fatalf("final version = %d, error = %v", version, err)
 	}
 }

@@ -157,9 +157,9 @@ func TestExportRepositoryLifecycleSnapshotAndTenantIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadManifest() error = %v", err)
 	}
-	if snapshot.Schema.Name != domain.ManifestSchemaName || snapshot.Tree.ID != treeID ||
-		len(snapshot.Members) != 3 || len(snapshot.Persons) != 1 ||
-		len(snapshot.PersonNames) != 1 || snapshot.Persons[0].Biography != "Архивная биография" {
+	if snapshot.Manifest.Schema.Name != domain.ManifestSchemaName || snapshot.Manifest.Tree.ID != treeID ||
+		len(snapshot.Manifest.Members) != 3 || len(snapshot.Manifest.Persons) != 1 ||
+		len(snapshot.Manifest.PersonNames) != 1 || snapshot.Manifest.Persons[0].Biography != "Архивная биография" {
 		t.Fatalf("manifest snapshot = %#v", snapshot)
 	}
 	now := time.Now().UTC()

@@ -1,6 +1,6 @@
 # PostgreSQL-backed worker
 
-Статус: реализованный контракт Этапа 9 и JSON-среза Этапа 10. Worker запускается отдельным процессом `go run ./cmd/worker`, но использует те же PostgreSQL и приватный S3 bucket, что и Family API.
+Статус: реализованный контракт Этапа 9 и первых двух export-срезов Этапа 10. Worker запускается отдельным процессом `go run ./cmd/worker`, но использует те же PostgreSQL и приватный S3 bucket, что и Family API.
 
 ## Гарантии очереди
 
@@ -52,7 +52,9 @@ Handler идемпотентно выполняет:
 
 ### `export.generate`
 
-Создаётся атомарно с `ExportJob`. Handler делает repeatable-read снимок дерева, сериализует schema-versioned JSON manifest, вычисляет SHA-256 и сохраняет результат по content-addressed ключу `trees/{treeID}/exports/{exportID}/manifest-{sha256}.json`. В manifest входят данные дерева, участники, персоны и имена, связи, союзы и media metadata, включая мягко удалённые доменные записи. Байты медиа, внутренние object keys, audit log и служебная очередь не экспортируются.
+Создаётся атомарно с `ExportJob`. Handler делает repeatable-read снимок дерева, сериализует schema-versioned JSON manifest и вычисляет SHA-256. `json_backup` сохраняет только manifest по content-addressed ключу `trees/{treeID}/exports/{exportID}/manifest-{sha256}.json`. В manifest входят данные дерева, участники, персоны и имена, связи, союзы и media metadata, включая мягко удалённые доменные записи. Внутренние object keys, audit log и служебная очередь не экспортируются.
+
+`zip_backup` дополняет тот же manifest доступными оригиналами и вариантами активных `ready` media. Архив содержит безопасные UUID-based пути, `manifest.json` и `checksums.sha256`; каждый скачанный из S3 объект повторно проверяется по размеру и SHA-256. Результат сохраняется как `backup-{sha256}.zip`. Текущая реализация собирает архив в памяти и поэтому отклоняет входной объём выше `EXPORT_MAX_ARCHIVE_BYTES`; streaming/multipart остаётся следующим инфраструктурным улучшением.
 
 Повторная обработка безопасна. После исчерпания retry доменное задание становится `failed`; удалённое во время генерации задание не может снова стать `completed`, а поздно загруженный объект удаляется.
 
@@ -75,6 +77,7 @@ Handler идемпотентно выполняет:
 - `MEDIA_CLEANUP_BATCH_SIZE=100`;
 - `EXPORT_RESULT_TTL=168h`;
 - `EXPORT_CLEANUP_INTERVAL=1h`;
-- `EXPORT_CLEANUP_BATCH_SIZE=100`.
+- `EXPORT_CLEANUP_BATCH_SIZE=100`;
+- `EXPORT_MAX_ARCHIVE_BYTES=268435456` (256 MiB).
 
 Heartbeat должен быть чаще половины lease. Один процесс сейчас выполняет задания последовательно; горизонтальное масштабирование достигается запуском нескольких worker-процессов с разными `WORKER_ID`.
