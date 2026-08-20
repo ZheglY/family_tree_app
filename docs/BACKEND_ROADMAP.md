@@ -724,6 +724,8 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 ### Этап 9. Worker
 
+Статус: завершён 21 августа 2026 года.
+
 Для первой версии использовать PostgreSQL-backed job queue:
 
 - job claim через `FOR UPDATE SKIP LOCKED`;
@@ -868,4 +870,6 @@ Family API ограничивает публичные auth-попытки по 
 
 Этап 8 завершён: добавлены `MediaAsset` и `PersonMedia`, private S3 adapter для Yandex Object Storage и MinIO, presigned PUT/GET, идемпотентный upload intent, проверяемый через HEAD complete, gallery CRUD, привязки к персоне и выбор основной фотографии. PostgreSQL хранит только метаданные и случайный object key; удаление мягкое, очищает primary media и оставляет физическую очистку восстанавливаемому worker-у.
 
-Следующий малый вертикальный срез: Этап 9 — PostgreSQL-backed job queue и worker для проверки фактического SHA-256/magic bytes, обработки изображений, очистки pending/orphaned/deleted объектов и подготовки экспортов. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
+Этап 9 завершён: отдельный `cmd/worker` использует PostgreSQL-backed очередь с `FOR UPDATE SKIP LOCKED`, lease/heartbeat, exponential retry, `dead` state и идемпотентными handlers. `media.process` проверяет фактический SHA-256, magic bytes и декодирование, создаёт thumbnail/preview и только затем открывает скачивание и привязки. `media.cleanup` безопасно резервирует просроченные pending и после retention удаляет originals/variants и metadata. Интеграционные тесты покрывают конкурирующий claim, потерю lease, retry/dead и реальный MinIO pipeline.
+
+Следующий малый вертикальный срез: Этап 10 — versioned JSON manifest export как фоновое задание, tenant-scoped история экспортов и короткоживущая ссылка на готовый результат. Production mailer и service-to-service аутентификацию завершить до публичного релиза.

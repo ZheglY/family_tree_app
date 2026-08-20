@@ -64,6 +64,18 @@ func (s *mediaObjectStoreStub) PresignDownload(
 	}, nil
 }
 
+func (s *mediaObjectStoreStub) PresignView(
+	_ context.Context,
+	objectKey string,
+) (storage.PresignedRequest, error) {
+	return storage.PresignedRequest{
+		URL:       "https://view.example/" + objectKey,
+		Method:    http.MethodGet,
+		Headers:   make(http.Header),
+		ExpiresAt: time.Now().UTC().Add(time.Minute),
+	}, nil
+}
+
 func TestMediaRepositoryLifecycleIdempotencyAndTenantIsolation(t *testing.T) {
 	databaseURL := os.Getenv("FAMILY_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -178,12 +190,49 @@ func TestMediaRepositoryLifecycleIdempotencyAndTenantIsolation(t *testing.T) {
 		t.Fatalf("CompleteUpload() error = %v", err)
 	}
 	if completed.Asset.Status != domain.StatusUploaded || completed.Asset.Version != 2 ||
-		completed.Download == nil {
+		completed.Download != nil {
 		t.Fatalf("completed media = %#v", completed)
+	}
+	var queuedJobs int
+	if err := database.Pool.QueryRow(ctx, `
+		SELECT count(*) FROM background_jobs
+		WHERE kind = 'media.process' AND deduplication_key = $1 AND status = 'queued'
+	`, created.Asset.ID.String()).Scan(&queuedJobs); err != nil || queuedJobs != 1 {
+		t.Fatalf("queued processing jobs = %d, error = %v", queuedJobs, err)
 	}
 	repeatedCompletion, err := mediaService.CompleteUpload(ctx, ownerA, treeA, created.Asset.ID)
 	if err != nil || repeatedCompletion.Asset.Version != 2 {
 		t.Fatalf("repeated completion = %#v, error = %v", repeatedCompletion, err)
+	}
+	if _, err := mediaService.AttachToPerson(ctx, mediaservice.AttachCommand{
+		ActorUserID: ownerA, TreeID: treeA, PersonID: personA,
+		MediaID: created.Asset.ID, Role: domain.RoleProfile,
+	}); !errors.Is(err, domain.ErrMediaStateConflict) {
+		t.Fatalf("unprocessed attachment error = %v", err)
+	}
+	processingAsset, err := mediaRepository.AcquireForProcessing(
+		ctx,
+		treeA,
+		created.Asset.ID,
+		time.Now().UTC(),
+	)
+	if err != nil || processingAsset.Status != domain.StatusProcessing || processingAsset.Version != 3 {
+		t.Fatalf("AcquireForProcessing() asset = %#v, error = %v", processingAsset, err)
+	}
+	width, height := 640, 480
+	if err := mediaRepository.MarkProcessingReady(
+		ctx,
+		processingAsset,
+		nil,
+		&width,
+		&height,
+		time.Now().UTC(),
+	); err != nil {
+		t.Fatalf("MarkProcessingReady() error = %v", err)
+	}
+	ready, err := mediaService.Get(ctx, ownerA, treeA, created.Asset.ID)
+	if err != nil || ready.Asset.Status != domain.StatusReady || ready.Asset.Version != 4 || ready.Download == nil {
+		t.Fatalf("ready media = %#v, error = %v", ready, err)
 	}
 
 	caption := "Семейный портрет"
@@ -192,20 +241,20 @@ func TestMediaRepositoryLifecycleIdempotencyAndTenantIsolation(t *testing.T) {
 		ActorUserID: ownerA,
 		TreeID:      treeA,
 		MediaID:     created.Asset.ID,
-		Version:     2,
+		Version:     4,
 		Values:      domain.UpdateValues{Caption: &caption, Description: &description},
 	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if updated.Asset.Version != 3 || updated.Asset.Caption != caption {
+	if updated.Asset.Version != 5 || updated.Asset.Caption != caption {
 		t.Fatalf("updated media = %#v", updated.Asset)
 	}
 	if _, err := mediaService.Update(ctx, mediaservice.UpdateCommand{
 		ActorUserID: ownerA,
 		TreeID:      treeA,
 		MediaID:     created.Asset.ID,
-		Version:     2,
+		Version:     4,
 		Values:      domain.UpdateValues{Caption: &caption},
 	}); !errors.Is(err, domain.ErrMediaVersionConflict) {
 		t.Fatalf("stale Update() error = %v", err)
@@ -317,11 +366,11 @@ func TestMediaRepositoryLifecycleIdempotencyAndTenantIsolation(t *testing.T) {
 		pageTwo.Items[0].Asset.ID == pageOne.Items[0].Asset.ID {
 		t.Fatalf("page two = %#v, error = %v", pageTwo, err)
 	}
-	uploadedOnly, err := mediaService.List(ctx, mediaservice.ListCommand{
-		ActorUserID: ownerA, TreeID: treeA, Status: domain.StatusUploaded,
+	readyOnly, err := mediaService.List(ctx, mediaservice.ListCommand{
+		ActorUserID: ownerA, TreeID: treeA, Status: domain.StatusReady,
 	})
-	if err != nil || len(uploadedOnly.Items) != 1 || uploadedOnly.Items[0].Asset.ID != created.Asset.ID {
-		t.Fatalf("uploaded list = %#v, error = %v", uploadedOnly, err)
+	if err != nil || len(readyOnly.Items) != 1 || readyOnly.Items[0].Asset.ID != created.Asset.ID {
+		t.Fatalf("ready list = %#v, error = %v", readyOnly, err)
 	}
 
 	if _, err := database.Pool.Exec(ctx, `
@@ -335,7 +384,7 @@ func TestMediaRepositoryLifecycleIdempotencyAndTenantIsolation(t *testing.T) {
 		ActorUserID: ownerA,
 		TreeID:      treeA,
 		MediaID:     created.Asset.ID,
-		Version:     3,
+		Version:     5,
 		RequestID:   "media-delete",
 		IPAddress:   "127.0.0.1",
 	}); err != nil {

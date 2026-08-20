@@ -106,9 +106,11 @@ New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
 
 $identityProcess = $null
 $familyProcess = $null
+$workerProcess = $null
 try {
     $identityBinary = Join-Path $temporaryRoot "identity-service.exe"
     $familyBinary = Join-Path $temporaryRoot "family-api.exe"
+    $workerBinary = Join-Path $temporaryRoot "family-worker.exe"
 
     Push-Location $IdentityRepository
     try {
@@ -125,6 +127,8 @@ try {
     try {
         go build -o $familyBinary ./cmd/family_tree_app
         if ($LASTEXITCODE -ne 0) { throw "Family API build failed" }
+        go build -o $workerBinary ./cmd/worker
+        if ($LASTEXITCODE -ne 0) { throw "Family worker build failed" }
         $env:POSTGRES_URL = $FamilyTestDatabaseURL
         go run ./cmd/migrate up | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Family test database migration failed" }
@@ -184,6 +188,20 @@ try {
     $ready = Invoke-RestMethod -Method Get -Uri "$baseURL/health/ready"
     if ($ready.response -ne "OK") {
         throw "Family API readiness check failed"
+    }
+
+    $workerOutput = Join-Path $temporaryRoot "worker.stdout.log"
+    $workerError = Join-Path $temporaryRoot "worker.stderr.log"
+    $workerProcess = Start-Process `
+        -FilePath $workerBinary `
+        -WorkingDirectory $familyRepository `
+        -WindowStyle Hidden `
+        -PassThru `
+        -RedirectStandardOutput $workerOutput `
+        -RedirectStandardError $workerError
+    Start-Sleep -Milliseconds 500
+    if ($workerProcess.HasExited) {
+        throw "Family worker did not start"
     }
 
     $email = "e2e-" + [guid]::NewGuid().ToString("N") + "@example.com"
@@ -611,7 +629,7 @@ try {
     }
 
     $mediaBytes = [Convert]::FromBase64String(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nCEAAAAASUVORK5CYII="
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
     )
     $mediaChecksumBytes = [System.Security.Cryptography.SHA256]::HashData($mediaBytes)
     $mediaChecksum = -join ($mediaChecksumBytes | ForEach-Object { $_.ToString("x2") })
@@ -639,12 +657,36 @@ try {
         -Method Post `
         -Uri "$baseURL/api/v1/trees/$treeID/media/$mediaID/complete" `
         -Headers $authorization
-    if ($completedMedia.media.status -ne "uploaded" -or $completedMedia.media.version -ne 2 -or $null -eq $completedMedia.download) {
+    if ($completedMedia.media.status -ne "uploaded" -or $completedMedia.media.version -ne 2 -or $null -ne $completedMedia.download) {
         throw "Media completion did not verify the object and increment the version"
     }
-    $downloadedMedia = Get-PresignedBytes -Download $completedMedia.download
+    $readyMedia = $null
+    for ($attempt = 0; $attempt -lt 80; $attempt++) {
+        $candidateMedia = Invoke-RestMethod `
+            -Method Get `
+            -Uri "$baseURL/api/v1/trees/$treeID/media/$mediaID" `
+            -Headers $authorization
+        if ($candidateMedia.media.status -eq "ready") {
+            $readyMedia = $candidateMedia
+            break
+        }
+        if ($candidateMedia.media.status -eq "rejected") {
+            throw "Media worker rejected the valid E2E image: $($candidateMedia.media.processing_error)"
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if ($null -eq $readyMedia -or $readyMedia.media.version -ne 4 -or `
+        $null -eq $readyMedia.download -or $readyMedia.variants.Count -ne 2) {
+        throw "Media worker did not produce a ready asset and two variants"
+    }
+    $downloadedMedia = Get-PresignedBytes -Download $readyMedia.download
     if ([Convert]::ToBase64String($downloadedMedia) -ne [Convert]::ToBase64String($mediaBytes)) {
         throw "Presigned media download did not return the uploaded bytes"
+    }
+    $downloadedVariant = Get-PresignedBytes -Download $readyMedia.variants[0].download
+    if ($downloadedVariant.Length -lt 3 -or $downloadedVariant[0] -ne 0xff -or `
+        $downloadedVariant[1] -ne 0xd8 -or $downloadedVariant[2] -ne 0xff) {
+        throw "Presigned media variant was not a generated JPEG"
     }
     $retriedMediaIntent = Invoke-RestMethod `
         -Method Post `
@@ -683,7 +725,7 @@ try {
         throw "Primary media selection did not increment the person version"
     }
     $mediaUpdateBody = @{
-        version = 2
+        version = 4
         caption = "E2E family portrait"
         description = "Uploaded through a private presigned URL"
     } | ConvertTo-Json -Compress
@@ -693,12 +735,12 @@ try {
         -ContentType "application/json" `
         -Headers $authorization `
         -Body $mediaUpdateBody
-    if ($updatedMedia.media.version -ne 3 -or $updatedMedia.media.caption -ne "E2E family portrait") {
+    if ($updatedMedia.media.version -ne 5 -or $updatedMedia.media.caption -ne "E2E family portrait") {
         throw "Media metadata update did not increment the version"
     }
     $mediaGallery = Invoke-RestMethod `
         -Method Get `
-        -Uri "$baseURL/api/v1/trees/$treeID/media?kind=photo&status=uploaded&limit=10" `
+        -Uri "$baseURL/api/v1/trees/$treeID/media?kind=photo&status=ready&limit=10" `
         -Headers $authorization
     if (($mediaGallery.items | Where-Object { $_.media.id -eq $mediaID }).Count -ne 1) {
         throw "Media gallery did not return the uploaded asset"
@@ -729,7 +771,7 @@ try {
     if ($primaryMediaAgain.person_version -ne 7 -or $reattachedMedia.attachment.media_id -ne $mediaID) {
         throw "Media could not be reattached and selected as primary"
     }
-    $mediaDeleteBody = @{version = 3} | ConvertTo-Json -Compress
+    $mediaDeleteBody = @{version = 5} | ConvertTo-Json -Compress
     $deletedMedia = Invoke-WebRequest `
         -Method Delete `
         -Uri "$baseURL/api/v1/trees/$treeID/media/$mediaID" `
@@ -957,7 +999,8 @@ try {
         graph_union_count = $graph.unions.Count
         union_lifecycle_version = $unionWithTwoMembers.union.version
         deleted_union_status = $deletedUnion.StatusCode
-        media_upload_status = $completedMedia.media.status
+        media_upload_status = $readyMedia.media.status
+        media_variant_count = $readyMedia.variants.Count
         media_lifecycle_version = $updatedMedia.media.version
         deleted_media_status = $deletedMedia.StatusCode
         person_version_after_media = $personAfterMediaDelete.person.version
@@ -976,7 +1019,9 @@ try {
         "identity.stdout.log",
         "identity.stderr.log",
         "family.stdout.log",
-        "family.stderr.log"
+        "family.stderr.log",
+        "worker.stdout.log",
+        "worker.stderr.log"
     )) {
         $logPath = Join-Path $temporaryRoot $logName
         if (Test-Path -LiteralPath $logPath) {
@@ -985,6 +1030,9 @@ try {
     }
     throw
 } finally {
+    if ($null -ne $workerProcess -and -not $workerProcess.HasExited) {
+        Stop-Process -Id $workerProcess.Id -Force
+    }
     if ($null -ne $familyProcess -and -not $familyProcess.HasExited) {
         Stop-Process -Id $familyProcess.Id -Force
     }

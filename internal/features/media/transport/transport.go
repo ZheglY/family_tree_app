@@ -108,7 +108,20 @@ type mediaDTO struct {
 	UploadedAt       *time.Time `json:"uploaded_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
+	ProcessingError  string     `json:"processing_error,omitempty"`
+	ProcessedAt      *time.Time `json:"processed_at,omitempty"`
 	Version          int        `json:"version"`
+}
+
+type mediaVariantDTO struct {
+	ID             uuid.UUID           `json:"id"`
+	Kind           string              `json:"kind"`
+	MIMEType       string              `json:"mime_type"`
+	SizeBytes      int64               `json:"size_bytes"`
+	ChecksumSHA256 string              `json:"checksum_sha256"`
+	Width          int                 `json:"width"`
+	Height         int                 `json:"height"`
+	Download       presignedRequestDTO `json:"download"`
 }
 
 type presignedRequestDTO struct {
@@ -126,6 +139,7 @@ type accessDTO struct {
 type mediaResponse struct {
 	Media    mediaDTO             `json:"media"`
 	Download *presignedRequestDTO `json:"download,omitempty"`
+	Variants []mediaVariantDTO    `json:"variants"`
 	Access   accessDTO            `json:"access"`
 }
 
@@ -139,6 +153,7 @@ type uploadIntentResponse struct {
 type mediaListItem struct {
 	Media    mediaDTO             `json:"media"`
 	Download *presignedRequestDTO `json:"download,omitempty"`
+	Variants []mediaVariantDTO    `json:"variants"`
 }
 
 type mediaListResponse struct {
@@ -502,6 +517,7 @@ func mapResult(result service.Result) mediaResponse {
 	return mediaResponse{
 		Media:    mapMedia(result.Asset),
 		Download: mapPresigned(result.Download),
+		Variants: mapVariants(result.Variants),
 		Access:   mapAccess(result.Membership.Role, result.Membership.Status),
 	}
 }
@@ -512,6 +528,7 @@ func mapListResult(result service.ListResult) mediaListResponse {
 		items = append(items, mediaListItem{
 			Media:    mapMedia(item.Asset),
 			Download: mapPresigned(item.Download),
+			Variants: mapVariants(item.Variants),
 		})
 	}
 	return mediaListResponse{
@@ -558,8 +575,29 @@ func mapMedia(asset domain.MediaAsset) mediaDTO {
 		UploadedAt:       asset.UploadedAt,
 		CreatedAt:        asset.CreatedAt,
 		UpdatedAt:        asset.UpdatedAt,
+		ProcessingError:  asset.ProcessingError,
+		ProcessedAt:      asset.ProcessedAt,
 		Version:          asset.Version,
 	}
+}
+
+func mapVariants(variants []service.VariantResult) []mediaVariantDTO {
+	result := make([]mediaVariantDTO, 0, len(variants))
+	for _, item := range variants {
+		variant := item.Variant
+		download := mapPresigned(&item.Download)
+		result = append(result, mediaVariantDTO{
+			ID:             variant.ID,
+			Kind:           variant.Kind,
+			MIMEType:       variant.MIMEType,
+			SizeBytes:      variant.SizeBytes,
+			ChecksumSHA256: variant.ChecksumSHA256,
+			Width:          variant.Width,
+			Height:         variant.Height,
+			Download:       *download,
+		})
+	}
+	return result
 }
 
 func mapPresigned(request *storage.PresignedRequest) *presignedRequestDTO {
