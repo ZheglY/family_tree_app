@@ -1,13 +1,11 @@
 package healthrepository
 
+import "context"
+
 type HealthRepository struct {
-	pool string
+	ping func(context.Context) error
 }
 
-func NewHealthRepository(
-	pool string,
-) *HealthRepository {
-	return &HealthRepository{
-		pool: pool,
-	}
+func NewHealthRepository(ping func(context.Context) error) *HealthRepository {
+	return &HealthRepository{ping: ping}
 }

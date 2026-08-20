@@ -662,6 +662,8 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 ### Этап 4. FamilyTree и tenant isolation
 
+Статус: завершён 20 августа 2026 года.
+
 Вертикальный срез:
 
 - FamilyTree и TreeMember;
@@ -846,6 +848,8 @@ Identity Service и Family API реализуют смену пароля пос
 
 Family API ограничивает публичные auth-попытки по IP и HMAC-обезличенному аккаунту. Для одного development-процесса доступен ограниченный in-memory backend, для нескольких экземпляров — атомарный Redis backend.
 
-До полного production-hardening Этапа 3 остаются production mailer и аутентифицированный gRPC transport. PostgreSQL семейного домена и S3 ещё не подключены; они не должны использовать базу Identity Service.
+Этап 4 завершён: Family API подключён к отдельной PostgreSQL, получил встроенные миграции, `FamilyTree`, `TreeMember`, optimistic version, мягкое удаление/восстановление и аудит жизненного цикла. Все запросы деревьев ограничены активным membership; интеграционный PostgreSQL-тест доказывает, что пользователь не может прочитать, изменить или удалить чужое дерево даже при знании UUID. Добавлены отдельные liveness и readiness проверки.
 
-Следующий малый вертикальный срез: Этап 4 — `FamilyTree`, `TreeMember` и обязательная tenant isolation. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
+До полного production-hardening Этапа 3 остаются production mailer и аутентифицированный gRPC transport. S3 ещё не подключён и будет добавлен вместе с медиа-срезом; Family API не использует базу Identity Service.
+
+Следующий малый вертикальный срез: Этап 5 — минимальные `Person` и `PersonName`, включая tenant-scoped CRUD, поиск, optimistic version и мягкое удаление/восстановление. Production mailer и service-to-service аутентификацию завершить до публичного релиза.

@@ -1,6 +1,7 @@
 param(
     [string]$IdentityRepository = "",
-    [string]$TestDatabaseURL = "postgres://identity:identity@localhost:5433/identity_test?sslmode=disable"
+    [string]$TestDatabaseURL = "postgres://identity:identity@localhost:5433/identity_test?sslmode=disable",
+    [string]$FamilyTestDatabaseURL = "postgres://family_tree:family_tree@localhost:5434/family_tree_test?sslmode=disable"
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,6 +47,9 @@ try {
     try {
         go build -o $familyBinary ./cmd/family_tree_app
         if ($LASTEXITCODE -ne 0) { throw "Family API build failed" }
+        $env:POSTGRES_URL = $FamilyTestDatabaseURL
+        go run ./cmd/migrate up | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Family test database migration failed" }
     } finally {
         Pop-Location
     }
@@ -99,6 +103,10 @@ try {
         Start-Sleep -Milliseconds 250
     }
     if (-not $familyReady) { throw "Family API did not start" }
+    $ready = Invoke-RestMethod -Method Get -Uri "$baseURL/health/ready"
+    if ($ready.response -ne "OK") {
+        throw "Family API readiness check failed"
+    }
 
     $email = "e2e-" + [guid]::NewGuid().ToString("N") + "@example.com"
     $password = "correct horse battery staple"
@@ -178,6 +186,71 @@ try {
         -Headers $authorization
     if ($profile.user.email -ne $email) {
         throw "Current-user profile does not match the authenticated account"
+    }
+
+    $treeBody = @{
+        name = "E2E Dynasty"
+        description = "End-to-end family tree"
+        locale = "ru-RU"
+        timezone = "Europe/Moscow"
+    } | ConvertTo-Json -Compress
+    $tree = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $treeBody
+    if ($tree.access.role -ne "owner" -or $tree.tree.version -ne 1) {
+        throw "Created tree did not contain owner access and version 1"
+    }
+    $treeID = $tree.tree.id
+    $trees = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees" `
+        -Headers $authorization
+    if (($trees.items | Where-Object { $_.tree.id -eq $treeID }).Count -ne 1) {
+        throw "Created tree was not returned by the accessible tree list"
+    }
+    $treeUpdateBody = @{
+        version = 1
+        name = "Updated E2E Dynasty"
+    } | ConvertTo-Json -Compress
+    $updatedTree = Invoke-RestMethod `
+        -Method Patch `
+        -Uri "$baseURL/api/v1/trees/$treeID" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $treeUpdateBody
+    if ($updatedTree.tree.version -ne 2) {
+        throw "Tree update did not increment the version"
+    }
+    $treeDeleteBody = @{version = 2} | ConvertTo-Json -Compress
+    $deletedTree = Invoke-WebRequest `
+        -Method Delete `
+        -Uri "$baseURL/api/v1/trees/$treeID" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $treeDeleteBody
+    if ($deletedTree.StatusCode -ne 204) {
+        throw "Tree delete returned $($deletedTree.StatusCode), want 204"
+    }
+    $hiddenTree = Invoke-WebRequest `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID" `
+        -Headers $authorization `
+        -SkipHttpErrorCheck
+    if ($hiddenTree.StatusCode -ne 404) {
+        throw "Deleted tree read returned $($hiddenTree.StatusCode), want 404"
+    }
+    $treeRestoreBody = @{version = 3} | ConvertTo-Json -Compress
+    $restoredTree = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/restore" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $treeRestoreBody
+    if ($restoredTree.tree.version -ne 4) {
+        throw "Tree restore did not increment the version"
     }
 
     $secondLoginResponse = Invoke-WebRequest `
@@ -371,10 +444,12 @@ try {
 
     [pscustomobject]@{
         health = $health.response
+        readiness = $ready.response
         registered_status = $register.user.status
         verified_status = $verified.user.status
         refresh_cookie_http_only = $refreshCookie.HttpOnly
         profile_email = $profile.user.email
+        tree_lifecycle_version = $restoredTree.tree.version
         sessions_before_revoke = $sessions.items.Count
         refresh_after_logout_all = $afterLogout.StatusCode
         old_password_login = $oldPasswordLogin.StatusCode

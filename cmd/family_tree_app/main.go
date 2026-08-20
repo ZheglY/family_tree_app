@@ -7,6 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	corepostgres "github.com/ZheglY/family_tree_app/internal/core/postgres"
+	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
+	"github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
 	"github.com/ZheglY/family_tree_app/internal/features/auth/access"
 	identityclient "github.com/ZheglY/family_tree_app/internal/features/auth/identity"
 	authratelimit "github.com/ZheglY/family_tree_app/internal/features/auth/ratelimit"
@@ -15,11 +19,10 @@ import (
 	healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
 	healthservice "github.com/ZheglY/family_tree_app/internal/features/health/service"
 	healthhttp "github.com/ZheglY/family_tree_app/internal/features/health/transport"
+	treepostgres "github.com/ZheglY/family_tree_app/internal/features/trees/repository/postgres"
+	treeservice "github.com/ZheglY/family_tree_app/internal/features/trees/service"
+	treehttp "github.com/ZheglY/family_tree_app/internal/features/trees/transport"
 	"go.uber.org/zap"
-
-	"github.com/ZheglY/family_tree_app/internal/core/logger"
-	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
-	"github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
 )
 
 func main() {
@@ -45,8 +48,18 @@ func main() {
 	}
 	defer log.Close()
 
+	postgresConfig, err := corepostgres.LoadConfig()
+	if err != nil {
+		panic(err)
+	}
+	database, err := corepostgres.Open(ctx, postgresConfig, log)
+	if err != nil {
+		panic(err)
+	}
+	defer database.Close()
+
 	log.Debug("initializing features", zap.String("feature", "health"))
-	healthRepository := healthrepository.NewHealthRepository("pool")
+	healthRepository := healthrepository.NewHealthRepository(database.Ping)
 	healthService := healthservice.NewHealthService(healthRepository)
 	healthTransportHTTP := healthhttp.NewHealthHTTPHandler(healthService)
 
@@ -73,6 +86,7 @@ func main() {
 	if err != nil {
 		panic(fmt.Errorf("initialize access token verifier: %w", err))
 	}
+	requireAccess := access.RequireAccess(accessVerifier)
 	cookieConfig, err := authhttp.LoadCookieConfig()
 	if err != nil {
 		panic(err)
@@ -97,9 +111,14 @@ func main() {
 	authTransportHTTP := authhttp.NewHandler(
 		authService,
 		refreshCookie,
-		access.RequireAccess(accessVerifier),
+		requireAccess,
 		authRateLimiter,
 	)
+
+	log.Debug("initializing features", zap.String("feature", "trees"))
+	treeRepository := treepostgres.New(database.Native())
+	treeService := treeservice.New(treeRepository)
+	treeTransportHTTP := treehttp.NewHandler(treeService, requireAccess)
 
 	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
@@ -131,6 +150,7 @@ func main() {
 	httpServer.RegisterRoutes(healthTransportHTTP.Routes()...)
 	apiV1Router := server.NewAPIVersionRouter(server.ApiVersion1)
 	apiV1Router.RegisterRoutes(authTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(treeTransportHTTP.Routes()...)
 	httpServer.RegisterAPIRouters(apiV1Router)
 
 	if err := httpServer.Run(ctx); err != nil {

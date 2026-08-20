@@ -107,7 +107,7 @@ With the local Identity PostgreSQL container running, execute:
 ./scripts/e2e-auth-smoke.ps1
 ```
 
-The script builds temporary binaries, migrates the `identity_test` database, starts both services in hidden processes, and exercises registration, email verification, login, refresh, session management, authenticated password change, password recovery and a real `429` login limit over the HTTP and gRPC transports. It stops the processes and removes its temporary binaries and logs on completion.
+The script builds temporary binaries, migrates the Identity and Family test databases, starts both services in hidden processes, and exercises registration, email verification, login, refresh, session management, the family-tree lifecycle, authenticated password change, password recovery and a real `429` login limit over the HTTP and gRPC transports. It stops the processes and removes its temporary binaries and logs on completion.
 
 ## Protobuf contract ownership
 
