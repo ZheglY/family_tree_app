@@ -21,6 +21,9 @@ type AuthService interface {
 	GetUser(context.Context, uuid.UUID) (model.User, error)
 	ListSessions(context.Context, uuid.UUID) ([]model.UserSession, error)
 	RevokeSession(context.Context, uuid.UUID, uuid.UUID) error
+	ChangePassword(context.Context, service.ChangePasswordCommand) error
+	ForgotPassword(context.Context, string) error
+	ResetPassword(context.Context, service.ResetPasswordCommand) error
 }
 
 type Handler struct {
@@ -48,10 +51,18 @@ func (h *Handler) Routes() []server.Route {
 		{Method: http.MethodPost, Path: "/auth/login", Handler: h.Login},
 		{Method: http.MethodPost, Path: "/auth/refresh", Handler: h.Refresh},
 		{Method: http.MethodPost, Path: "/auth/logout", Handler: h.Logout},
+		{Method: http.MethodPost, Path: "/auth/forgot-password", Handler: h.ForgotPassword},
+		{Method: http.MethodPost, Path: "/auth/reset-password", Handler: h.ResetPassword},
 		{
 			Method:     http.MethodPost,
 			Path:       "/auth/logout-all",
 			Handler:    h.LogoutAll,
+			Middleware: []coremiddleware.Middleware{h.requireAccess},
+		},
+		{
+			Method:     http.MethodPost,
+			Path:       "/users/me/change-password",
+			Handler:    h.ChangePassword,
 			Middleware: []coremiddleware.Middleware{h.requireAccess},
 		},
 		{

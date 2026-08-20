@@ -287,6 +287,51 @@ func (c *Client) RevokeSession(
 	return nil
 }
 
+func (c *Client) ChangePassword(
+	ctx context.Context,
+	command service.ChangePasswordCommand,
+) error {
+	callContext, cancel := c.callContext(ctx)
+	defer cancel()
+
+	if _, err := c.api.ChangePassword(callContext, &identityv1.ChangePasswordRequest{
+		UserId:          command.UserID.String(),
+		CurrentPassword: command.CurrentPassword,
+		NewPassword:     command.NewPassword,
+	}); err != nil {
+		return mapError("change password", err)
+	}
+	return nil
+}
+
+func (c *Client) ForgotPassword(ctx context.Context, email string) error {
+	callContext, cancel := c.callContext(ctx)
+	defer cancel()
+
+	if _, err := c.api.ForgotPassword(callContext, &identityv1.ForgotPasswordRequest{
+		Email: email,
+	}); err != nil {
+		return mapError("forgot password", err)
+	}
+	return nil
+}
+
+func (c *Client) ResetPassword(
+	ctx context.Context,
+	command service.ResetPasswordCommand,
+) error {
+	callContext, cancel := c.callContext(ctx)
+	defer cancel()
+
+	if _, err := c.api.ResetPassword(callContext, &identityv1.ResetPasswordRequest{
+		Token:       command.Token,
+		NewPassword: command.NewPassword,
+	}); err != nil {
+		return mapError("reset password", err)
+	}
+	return nil
+}
+
 func (c *Client) callContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if id := requestid.FromContext(ctx); id != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, requestIDMetadataKey, id)

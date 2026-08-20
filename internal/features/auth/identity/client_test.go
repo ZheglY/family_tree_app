@@ -18,7 +18,10 @@ import (
 )
 
 type identityAPIStub struct {
-	login func(context.Context, *identityv1.LoginRequest) (*identityv1.SessionResponse, error)
+	login          func(context.Context, *identityv1.LoginRequest) (*identityv1.SessionResponse, error)
+	changePassword func(context.Context, *identityv1.ChangePasswordRequest) error
+	forgotPassword func(context.Context, *identityv1.ForgotPasswordRequest) error
+	resetPassword  func(context.Context, *identityv1.ResetPasswordRequest) error
 }
 
 func (s identityAPIStub) Register(
@@ -101,6 +104,39 @@ func (s identityAPIStub) RevokeSession(
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
+func (s identityAPIStub) ChangePassword(
+	ctx context.Context,
+	request *identityv1.ChangePasswordRequest,
+	_ ...grpc.CallOption,
+) (*identityv1.ChangePasswordResponse, error) {
+	if s.changePassword == nil {
+		return nil, status.Error(codes.Unimplemented, "not implemented")
+	}
+	return &identityv1.ChangePasswordResponse{}, s.changePassword(ctx, request)
+}
+
+func (s identityAPIStub) ForgotPassword(
+	ctx context.Context,
+	request *identityv1.ForgotPasswordRequest,
+	_ ...grpc.CallOption,
+) (*identityv1.ForgotPasswordResponse, error) {
+	if s.forgotPassword == nil {
+		return nil, status.Error(codes.Unimplemented, "not implemented")
+	}
+	return &identityv1.ForgotPasswordResponse{}, s.forgotPassword(ctx, request)
+}
+
+func (s identityAPIStub) ResetPassword(
+	ctx context.Context,
+	request *identityv1.ResetPasswordRequest,
+	_ ...grpc.CallOption,
+) (*identityv1.ResetPasswordResponse, error) {
+	if s.resetPassword == nil {
+		return nil, status.Error(codes.Unimplemented, "not implemented")
+	}
+	return &identityv1.ResetPasswordResponse{}, s.resetPassword(ctx, request)
+}
+
 func TestClientLoginMapsSessionAndPropagatesRequestMetadata(t *testing.T) {
 	userID := uuid.New()
 	now := time.Now().UTC().Truncate(time.Second)
@@ -165,5 +201,51 @@ func TestClientMapsUnavailableIdentity(t *testing.T) {
 	_, err := client.Login(context.Background(), service.LoginCommand{})
 	if !errors.Is(err, apperrors.ErrServiceUnavailable) {
 		t.Fatalf("Login() error = %v, want service unavailable", err)
+	}
+}
+
+func TestClientChangePasswordMapsCommand(t *testing.T) {
+	userID := uuid.New()
+	client := &Client{
+		timeout: time.Second,
+		api: identityAPIStub{changePassword: func(
+			_ context.Context,
+			request *identityv1.ChangePasswordRequest,
+		) error {
+			if request.GetUserId() != userID.String() ||
+				request.GetCurrentPassword() != "current value" ||
+				request.GetNewPassword() != "new correct horse battery staple" {
+				t.Fatalf("change password request = %#v", request)
+			}
+			return nil
+		}},
+	}
+
+	if err := client.ChangePassword(context.Background(), service.ChangePasswordCommand{
+		UserID:          userID,
+		CurrentPassword: "current value",
+		NewPassword:     "new correct horse battery staple",
+	}); err != nil {
+		t.Fatalf("ChangePassword() error = %v", err)
+	}
+}
+
+func TestClientResetPasswordMapsConsumedToken(t *testing.T) {
+	client := &Client{
+		timeout: time.Second,
+		api: identityAPIStub{resetPassword: func(
+			context.Context,
+			*identityv1.ResetPasswordRequest,
+		) error {
+			return status.Error(codes.FailedPrecondition, "token used")
+		}},
+	}
+
+	err := client.ResetPassword(context.Background(), service.ResetPasswordCommand{
+		Token:       "used-token",
+		NewPassword: "new correct horse battery staple",
+	})
+	if !errors.Is(err, apperrors.ErrUnprocessable) {
+		t.Fatalf("ResetPassword() error = %v, want unprocessable", err)
 	}
 }

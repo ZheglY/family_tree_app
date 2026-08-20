@@ -226,6 +226,125 @@ try {
         throw "Refresh after logout-all returned $($afterLogout.StatusCode), want 401"
     }
 
+    $passwordChangeLogin = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/auth/login" `
+        -ContentType "application/json" `
+        -Body $loginBody `
+        -SessionVariable passwordChangeSession
+    $passwordChangeAccess = ($passwordChangeLogin.Content | ConvertFrom-Json).access_token
+    $passwordChangeAuthorization = @{Authorization = "Bearer " + $passwordChangeAccess}
+    $changedPassword = "new correct horse battery staple"
+    $changePasswordBody = @{
+        current_password = $password
+        new_password = $changedPassword
+    } | ConvertTo-Json -Compress
+    $changePasswordResponse = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/users/me/change-password" `
+        -ContentType "application/json" `
+        -Headers $passwordChangeAuthorization `
+        -WebSession $passwordChangeSession `
+        -Body $changePasswordBody
+    if ($changePasswordResponse.StatusCode -ne 204) {
+        throw "Password change returned $($changePasswordResponse.StatusCode), want 204"
+    }
+
+    $oldPasswordLogin = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/auth/login" `
+        -ContentType "application/json" `
+        -Body $loginBody `
+        -SkipHttpErrorCheck
+    if ($oldPasswordLogin.StatusCode -ne 401) {
+        throw "Login with changed password returned $($oldPasswordLogin.StatusCode), want 401"
+    }
+
+    $changedLoginBody = @{
+        email = $email
+        password = $changedPassword
+    } | ConvertTo-Json -Compress
+    $changedLoginResponse = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/auth/login" `
+        -ContentType "application/json" `
+        -Body $changedLoginBody `
+        -SessionVariable recoverySession
+    if ($changedLoginResponse.StatusCode -ne 200) {
+        throw "Login after password change returned $($changedLoginResponse.StatusCode), want 200"
+    }
+
+    $forgotPasswordBody = @{email = $email} | ConvertTo-Json -Compress
+    $forgotPasswordResponse = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/auth/forgot-password" `
+        -ContentType "application/json" `
+        -Body $forgotPasswordBody
+    if ($forgotPasswordResponse.StatusCode -ne 202) {
+        throw "Password recovery request returned $($forgotPasswordResponse.StatusCode), want 202"
+    }
+
+    $passwordResetToken = ""
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $identityLog = Get-Content -Raw -LiteralPath $identityOutput -ErrorAction SilentlyContinue
+        $resetMatches = [regex]::Matches(
+            $identityLog,
+            'password_reset_url[^\r\n]*?token=([A-Za-z0-9_-]+)'
+        )
+        if ($resetMatches.Count -gt 0) {
+            $passwordResetToken = $resetMatches[$resetMatches.Count - 1].Groups[1].Value
+            break
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if ([string]::IsNullOrWhiteSpace($passwordResetToken)) {
+        throw "Password reset token was not found in development mailer output"
+    }
+
+    $recoveredPassword = "recovered correct horse battery staple"
+    $resetPasswordBody = @{
+        token = $passwordResetToken
+        new_password = $recoveredPassword
+    } | ConvertTo-Json -Compress
+    $resetPasswordResponse = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/auth/reset-password" `
+        -ContentType "application/json" `
+        -Body $resetPasswordBody
+    if ($resetPasswordResponse.StatusCode -ne 204) {
+        throw "Password reset returned $($resetPasswordResponse.StatusCode), want 204"
+    }
+
+    $refreshAfterReset = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/auth/refresh" `
+        -WebSession $recoverySession `
+        -SkipHttpErrorCheck
+    if ($refreshAfterReset.StatusCode -ne 401) {
+        throw "Refresh after password reset returned $($refreshAfterReset.StatusCode), want 401"
+    }
+    $reusedReset = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/auth/reset-password" `
+        -ContentType "application/json" `
+        -Body $resetPasswordBody `
+        -SkipHttpErrorCheck
+    if ($reusedReset.StatusCode -ne 422) {
+        throw "Reused reset token returned $($reusedReset.StatusCode), want 422"
+    }
+    $recoveredLoginBody = @{
+        email = $email
+        password = $recoveredPassword
+    } | ConvertTo-Json -Compress
+    $recoveredLogin = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/auth/login" `
+        -ContentType "application/json" `
+        -Body $recoveredLoginBody
+    if ($recoveredLogin.StatusCode -ne 200) {
+        throw "Login after password recovery returned $($recoveredLogin.StatusCode), want 200"
+    }
+
     [pscustomobject]@{
         health = $health.response
         registered_status = $register.user.status
@@ -234,6 +353,10 @@ try {
         profile_email = $profile.user.email
         sessions_before_revoke = $sessions.items.Count
         refresh_after_logout_all = $afterLogout.StatusCode
+        old_password_login = $oldPasswordLogin.StatusCode
+        refresh_after_password_reset = $refreshAfterReset.StatusCode
+        reused_reset_token = $reusedReset.StatusCode
+        recovered_login = $recoveredLogin.StatusCode
     }
 } catch {
     foreach ($logName in @(

@@ -14,9 +14,12 @@ All endpoints use JSON under `/api/v1`:
 | `POST` | `/auth/refresh` | refresh cookie | Rotates the refresh token and returns a new access token |
 | `POST` | `/auth/logout` | refresh cookie if present | Revokes one session and clears the cookie |
 | `POST` | `/auth/logout-all` | bearer access token | Revokes every session owned by the authenticated user |
+| `POST` | `/auth/forgot-password` | public | Returns a generic `202` and, for an active account, sends a reset link |
+| `POST` | `/auth/reset-password` | public | Consumes a reset token, changes the password and revokes all sessions |
 | `GET` | `/users/me` | bearer access token | Returns the current account profile |
 | `GET` | `/users/me/sessions` | bearer access token | Lists active, non-expired sessions and marks the current one |
 | `DELETE` | `/users/me/sessions/{session_id}` | bearer access token | Revokes one session owned by the current user |
+| `POST` | `/users/me/change-password` | bearer access token plus current password | Changes the password and revokes all sessions |
 
 Login request example:
 
@@ -43,6 +46,8 @@ Login and refresh return only the short-lived access token in JSON:
 ```
 
 The refresh token is never included in JSON. It is stored in an `HttpOnly` cookie whose default `SameSite` policy is `Strict`. Local HTTP development defaults `Secure` to false; every HTTPS deployment must set `AUTH_REFRESH_COOKIE_SECURE=true`.
+
+Password reset tokens are random, single-use and expire after one hour. A newer recovery request invalidates the previous token. Both password-changing endpoints clear the browser refresh cookie, and Identity revokes all server-side sessions. Because access tokens are locally validated JWTs, an already issued access token can remain valid until its short 15-minute expiry; clients must discard it after a successful password change or reset.
 
 ## Access-token validation
 
@@ -82,7 +87,7 @@ With the local Identity PostgreSQL container running, execute:
 ./scripts/e2e-auth-smoke.ps1
 ```
 
-The script builds temporary binaries, migrates the `identity_test` database, starts both services in hidden processes, and exercises registration, email verification, login, refresh and logout-all over the real HTTP and gRPC transports. It stops the processes and removes its temporary binaries and logs on completion.
+The script builds temporary binaries, migrates the `identity_test` database, starts both services in hidden processes, and exercises registration, email verification, login, refresh, session management, authenticated password change and password recovery over the real HTTP and gRPC transports. It stops the processes and removes its temporary binaries and logs on completion.
 
 ## Protobuf contract ownership
 

@@ -10,6 +10,7 @@ import (
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/response"
 	"github.com/ZheglY/family_tree_app/internal/features/auth/access"
 	"github.com/ZheglY/family_tree_app/internal/features/auth/model"
+	"github.com/ZheglY/family_tree_app/internal/features/auth/service"
 	"github.com/google/uuid"
 )
 
@@ -91,6 +92,34 @@ func (h *Handler) RevokeSession(rw http.ResponseWriter, request *http.Request) {
 	if sessionID == principal.SessionID {
 		h.refreshCookie.Clear(rw)
 	}
+	rw.WriteHeader(http.StatusNoContent)
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+func (h *Handler) ChangePassword(rw http.ResponseWriter, request *http.Request) {
+	principal, ok := access.PrincipalFromContext(request.Context())
+	if !ok {
+		writeError(rw, request, apperrors.ErrUnauthorized, "Authentication is required")
+		return
+	}
+	var body changePasswordRequest
+	if !decodeRequest(rw, request, &body) {
+		return
+	}
+
+	if err := h.service.ChangePassword(request.Context(), service.ChangePasswordCommand{
+		UserID:          principal.UserID,
+		CurrentPassword: body.CurrentPassword,
+		NewPassword:     body.NewPassword,
+	}); err != nil {
+		writeError(rw, request, err, "Password change failed")
+		return
+	}
+	h.refreshCookie.Clear(rw)
 	rw.WriteHeader(http.StatusNoContent)
 }
 

@@ -25,6 +25,9 @@ type authServiceStub struct {
 	revokedCount    int64
 	sessions        []model.UserSession
 	revokedSession  uuid.UUID
+	changePassword  service.ChangePasswordCommand
+	forgotEmail     string
+	resetPassword   service.ResetPasswordCommand
 	err             error
 }
 
@@ -83,6 +86,27 @@ func (s *authServiceStub) RevokeSession(
 	sessionID uuid.UUID,
 ) error {
 	s.revokedSession = sessionID
+	return s.err
+}
+
+func (s *authServiceStub) ChangePassword(
+	_ context.Context,
+	command service.ChangePasswordCommand,
+) error {
+	s.changePassword = command
+	return s.err
+}
+
+func (s *authServiceStub) ForgotPassword(_ context.Context, email string) error {
+	s.forgotEmail = email
+	return s.err
+}
+
+func (s *authServiceStub) ResetPassword(
+	_ context.Context,
+	command service.ResetPasswordCommand,
+) error {
+	s.resetPassword = command
 	return s.err
 }
 
@@ -234,6 +258,76 @@ func TestRevokeCurrentSessionClearsRefreshCookie(t *testing.T) {
 	}
 	if serviceStub.revokedSession != currentSessionID {
 		t.Fatalf("revoked session = %s, want %s", serviceStub.revokedSession, currentSessionID)
+	}
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cleared cookies = %#v", cookies)
+	}
+}
+
+func TestChangePasswordUsesAuthenticatedPrincipalAndClearsCookie(t *testing.T) {
+	userID := uuid.New()
+	serviceStub := &authServiceStub{session: testSession()}
+	handler := testHandler(t, serviceStub)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/users/me/change-password",
+		strings.NewReader(`{"current_password":"current value","new_password":"new correct horse battery staple"}`),
+	)
+	request = request.WithContext(access.NewPrincipalContext(
+		request.Context(),
+		access.Principal{UserID: userID, SessionID: uuid.New()},
+	))
+	recorder := serveHandler(handler.ChangePassword, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+	if serviceStub.changePassword.UserID != userID ||
+		serviceStub.changePassword.CurrentPassword != "current value" ||
+		serviceStub.changePassword.NewPassword != "new correct horse battery staple" {
+		t.Fatalf("change password command = %#v", serviceStub.changePassword)
+	}
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cleared cookies = %#v", cookies)
+	}
+}
+
+func TestForgotPasswordReturnsGenericAcceptedResponse(t *testing.T) {
+	serviceStub := &authServiceStub{session: testSession()}
+	handler := testHandler(t, serviceStub)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/forgot-password",
+		strings.NewReader(`{"email":"missing@example.com"}`),
+	)
+	recorder := serveHandler(handler.ForgotPassword, request)
+
+	if recorder.Code != http.StatusAccepted || recorder.Body.Len() != 0 {
+		t.Fatalf("status = %d, body = %q", recorder.Code, recorder.Body.String())
+	}
+	if serviceStub.forgotEmail != "missing@example.com" {
+		t.Fatalf("forgot email = %q", serviceStub.forgotEmail)
+	}
+}
+
+func TestResetPasswordClearsRefreshCookie(t *testing.T) {
+	serviceStub := &authServiceStub{session: testSession()}
+	handler := testHandler(t, serviceStub)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/reset-password",
+		strings.NewReader(`{"token":"reset-token","new_password":"new correct horse battery staple"}`),
+	)
+	recorder := serveHandler(handler.ResetPassword, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+	if serviceStub.resetPassword.Token != "reset-token" ||
+		serviceStub.resetPassword.NewPassword != "new correct horse battery staple" {
+		t.Fatalf("reset command = %#v", serviceStub.resetPassword)
 	}
 	cookies := recorder.Result().Cookies()
 	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
