@@ -22,6 +22,9 @@ import (
 	personpostgres "github.com/ZheglY/family_tree_app/internal/features/persons/repository/postgres"
 	personservice "github.com/ZheglY/family_tree_app/internal/features/persons/service"
 	personhttp "github.com/ZheglY/family_tree_app/internal/features/persons/transport"
+	relationpostgres "github.com/ZheglY/family_tree_app/internal/features/relationships/repository/postgres"
+	relationservice "github.com/ZheglY/family_tree_app/internal/features/relationships/service"
+	relationhttp "github.com/ZheglY/family_tree_app/internal/features/relationships/transport"
 	treepostgres "github.com/ZheglY/family_tree_app/internal/features/trees/repository/postgres"
 	treeservice "github.com/ZheglY/family_tree_app/internal/features/trees/service"
 	treehttp "github.com/ZheglY/family_tree_app/internal/features/trees/transport"
@@ -128,6 +131,11 @@ func main() {
 	personService := personservice.New(personRepository, treeRepository)
 	personTransportHTTP := personhttp.NewHandler(personService, requireAccess)
 
+	log.Debug("initializing features", zap.String("feature", "relationships"))
+	relationRepository := relationpostgres.New(database.Native())
+	relationService := relationservice.New(relationRepository, treeRepository)
+	relationTransportHTTP := relationhttp.NewHandler(relationService, requireAccess)
+
 	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
 	httpConfig := server.NewConfigMust()
@@ -160,6 +168,7 @@ func main() {
 	apiV1Router.RegisterRoutes(authTransportHTTP.Routes()...)
 	apiV1Router.RegisterRoutes(treeTransportHTTP.Routes()...)
 	apiV1Router.RegisterRoutes(personTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(relationTransportHTTP.Routes()...)
 	httpServer.RegisterAPIRouters(apiV1Router)
 
 	if err := httpServer.Run(ctx); err != nil {

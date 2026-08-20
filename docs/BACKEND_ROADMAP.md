@@ -691,6 +691,8 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 ### Этап 6. Родительский граф
 
+Статус: завершён 20 августа 2026 года.
+
 Реализовать ParentChildRelation и проверку циклов.
 
 Алгоритм перед вставкой `parent -> child`: проверить, существует ли уже путь `child -> ... -> parent`. Для PostgreSQL подойдёт recursive CTE; в service можно дополнительно ограничить число посещённых узлов.
@@ -856,4 +858,6 @@ Family API ограничивает публичные auth-попытки по 
 
 Этап 5 завершён: добавлены `Person` и обязательное preferred `PersonName`, транзакционный CRUD агрегата, cursor pagination и поиск по имени, optimistic version, мягкое удаление/восстановление и audit log. Составной внешний ключ защищает принадлежность имени дереву; PostgreSQL integration-тесты покрывают outsider/viewer роли и запрещают cross-tree запись.
 
-Следующий малый вертикальный срез: Этап 6 — `ParentChildRelation`, проверка циклов recursive CTE и ограниченный `/graph`. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
+Этап 6 завершён: реализованы типизированные `ParentChildRelation`, optimistic version, мягкое удаление и аудит. Recursive CTE проверяет прямые и длинные циклы, а advisory lock сериализует конкурентные изменения одного дерева. Ограниченный `/graph` возвращает плоские массивы персон и связей в repeatable-read транзакции; PostgreSQL-тесты покрывают tenant isolation, роли, дубликаты, soft-delete и встречные конкурентные вставки.
+
+Следующий малый вертикальный срез: Этап 7 — `FamilyUnion` и `UnionMember`, транзакционное создание союза с участниками и включение партнёров в `/graph`. Production mailer и service-to-service аутентификацию завершить до публичного релиза.

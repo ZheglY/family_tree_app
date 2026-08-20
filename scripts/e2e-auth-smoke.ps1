@@ -328,6 +328,118 @@ try {
         throw "Person restore did not increment the version"
     }
 
+    $childPersonBody = @{
+        sex = "male"
+        life_status = "alive"
+        preferred_name = @{
+            given_name = "Boris"
+            family_name = "Volkonsky"
+            language_code = "en"
+        }
+    } | ConvertTo-Json -Compress -Depth 4
+    $childPerson = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $childPersonBody
+    $grandchildPersonBody = @{
+        sex = "female"
+        life_status = "alive"
+        preferred_name = @{
+            given_name = "Vera"
+            family_name = "Volkonskaya"
+            language_code = "en"
+        }
+    } | ConvertTo-Json -Compress -Depth 4
+    $grandchildPerson = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $grandchildPersonBody
+
+    $firstRelationBody = @{
+        parent_person_id = $personID
+        child_person_id = $childPerson.person.id
+        relation_type = "biological"
+        confidence = "confirmed"
+    } | ConvertTo-Json -Compress
+    $firstRelation = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/parent-child-relations" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $firstRelationBody
+    $secondRelationBody = @{
+        parent_person_id = $childPerson.person.id
+        child_person_id = $grandchildPerson.person.id
+        relation_type = "biological"
+        confidence = "confirmed"
+    } | ConvertTo-Json -Compress
+    $secondRelation = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/parent-child-relations" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $secondRelationBody
+    if ($firstRelation.relation.version -ne 1 -or $secondRelation.relation.version -ne 1) {
+        throw "Parent-child relations were not created at version 1"
+    }
+
+    $cycleBody = @{
+        parent_person_id = $grandchildPerson.person.id
+        child_person_id = $personID
+        relation_type = "biological"
+        confidence = "confirmed"
+    } | ConvertTo-Json -Compress
+    $cycleResponse = Invoke-WebRequest `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/parent-child-relations" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $cycleBody `
+        -SkipHttpErrorCheck
+    if ($cycleResponse.StatusCode -ne 422) {
+        throw "Cyclic relation returned $($cycleResponse.StatusCode), want 422"
+    }
+
+    $graph = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/graph?center_person_id=$($childPerson.person.id)&ancestors_depth=1&descendants_depth=1&include_partners=true" `
+        -Headers $authorization
+    if ($graph.persons.Count -ne 3 -or $graph.parent_child_relations.Count -ne 2) {
+        throw "Three-generation graph size is persons $($graph.persons.Count), relations $($graph.parent_child_relations.Count)"
+    }
+    if ($graph.unions.Count -ne 0 -or $graph.union_members.Count -ne 0) {
+        throw "Graph returned unions before the union stage"
+    }
+
+    $relationUpdateBody = @{
+        version = 1
+        confidence = "probable"
+        note = "E2E updated relation"
+    } | ConvertTo-Json -Compress
+    $updatedRelation = Invoke-RestMethod `
+        -Method Patch `
+        -Uri "$baseURL/api/v1/trees/$treeID/parent-child-relations/$($firstRelation.relation.id)" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $relationUpdateBody
+    if ($updatedRelation.relation.version -ne 2) {
+        throw "Relation update did not increment the version"
+    }
+    $relationDeleteBody = @{version = 2} | ConvertTo-Json -Compress
+    $deletedRelation = Invoke-WebRequest `
+        -Method Delete `
+        -Uri "$baseURL/api/v1/trees/$treeID/parent-child-relations/$($firstRelation.relation.id)" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $relationDeleteBody
+    if ($deletedRelation.StatusCode -ne 204) {
+        throw "Relation delete returned $($deletedRelation.StatusCode), want 204"
+    }
+
     $secondLoginResponse = Invoke-WebRequest `
         -Method Post `
         -Uri "$baseURL/api/v1/auth/login" `
@@ -526,6 +638,9 @@ try {
         profile_email = $profile.user.email
         tree_lifecycle_version = $restoredTree.tree.version
         person_lifecycle_version = $restoredPerson.person.version
+        graph_person_count = $graph.persons.Count
+        cyclic_relation_status = $cycleResponse.StatusCode
+        deleted_relation_status = $deletedRelation.StatusCode
         sessions_before_revoke = $sessions.items.Count
         refresh_after_logout_all = $afterLogout.StatusCode
         old_password_login = $oldPasswordLogin.StatusCode

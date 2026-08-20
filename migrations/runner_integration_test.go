@@ -11,7 +11,7 @@ import (
 	"github.com/ZheglY/family_tree_app/migrations"
 )
 
-func TestRunnerRollsPersonMigrationDownAndBackUp(t *testing.T) {
+func TestRunnerRollsLatestMigrationDownAndBackUp(t *testing.T) {
 	databaseURL := os.Getenv("FAMILY_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("FAMILY_TEST_DATABASE_URL is not configured")
@@ -37,23 +37,27 @@ func TestRunnerRollsPersonMigrationDownAndBackUp(t *testing.T) {
 	if err := runner.Down(ctx, 1); err != nil {
 		t.Fatalf("Down() error = %v", err)
 	}
-	if version, err := runner.CurrentVersion(ctx); err != nil || version != 1 {
+	if version, err := runner.CurrentVersion(ctx); err != nil || version != 2 {
 		t.Fatalf("version after down = %d, error = %v", version, err)
 	}
-	var personsMissing, treesPresent bool
+	var relationsMissing, personsPresent bool
 	if err := database.Pool.QueryRow(ctx, `
-		SELECT to_regclass('persons') IS NULL,
-		       to_regclass('family_trees') IS NOT NULL
-	`).Scan(&personsMissing, &treesPresent); err != nil {
+		SELECT to_regclass('parent_child_relations') IS NULL,
+		       to_regclass('persons') IS NOT NULL
+	`).Scan(&relationsMissing, &personsPresent); err != nil {
 		t.Fatal(err)
 	}
-	if !personsMissing || !treesPresent {
-		t.Fatalf("schema after down: persons missing = %t, trees present = %t", personsMissing, treesPresent)
+	if !relationsMissing || !personsPresent {
+		t.Fatalf(
+			"schema after down: relations missing = %t, persons present = %t",
+			relationsMissing,
+			personsPresent,
+		)
 	}
 	if err := runner.Up(ctx); err != nil {
 		t.Fatalf("second Up() error = %v", err)
 	}
-	if version, err := runner.CurrentVersion(ctx); err != nil || version != 2 {
+	if version, err := runner.CurrentVersion(ctx); err != nil || version != 3 {
 		t.Fatalf("final version = %d, error = %v", version, err)
 	}
 }
