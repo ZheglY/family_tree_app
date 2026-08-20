@@ -2,7 +2,7 @@
 
 Backend многопользовательского сервиса семейных деревьев. Family API построен как модульный монолит на Go, использует отдельный gRPC Identity Service и собственную PostgreSQL для семейного домена.
 
-Канонические документы: [концепция](docs/PROJECT_CONCEPT.md), [backend roadmap](docs/BACKEND_ROADMAP.md), [Trees HTTP API](docs/TREES_HTTP_API.md).
+Канонические документы: [концепция](docs/PROJECT_CONCEPT.md), [backend roadmap](docs/BACKEND_ROADMAP.md), [Trees HTTP API](docs/TREES_HTTP_API.md), [Persons HTTP API](docs/PERSONS_HTTP_API.md).
 
 ## Локальный запуск
 

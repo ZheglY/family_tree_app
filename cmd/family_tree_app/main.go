@@ -19,6 +19,9 @@ import (
 	healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
 	healthservice "github.com/ZheglY/family_tree_app/internal/features/health/service"
 	healthhttp "github.com/ZheglY/family_tree_app/internal/features/health/transport"
+	personpostgres "github.com/ZheglY/family_tree_app/internal/features/persons/repository/postgres"
+	personservice "github.com/ZheglY/family_tree_app/internal/features/persons/service"
+	personhttp "github.com/ZheglY/family_tree_app/internal/features/persons/transport"
 	treepostgres "github.com/ZheglY/family_tree_app/internal/features/trees/repository/postgres"
 	treeservice "github.com/ZheglY/family_tree_app/internal/features/trees/service"
 	treehttp "github.com/ZheglY/family_tree_app/internal/features/trees/transport"
@@ -120,6 +123,11 @@ func main() {
 	treeService := treeservice.New(treeRepository)
 	treeTransportHTTP := treehttp.NewHandler(treeService, requireAccess)
 
+	log.Debug("initializing features", zap.String("feature", "persons"))
+	personRepository := personpostgres.New(database.Native())
+	personService := personservice.New(personRepository, treeRepository)
+	personTransportHTTP := personhttp.NewHandler(personService, requireAccess)
+
 	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
 	httpConfig := server.NewConfigMust()
@@ -151,6 +159,7 @@ func main() {
 	apiV1Router := server.NewAPIVersionRouter(server.ApiVersion1)
 	apiV1Router.RegisterRoutes(authTransportHTTP.Routes()...)
 	apiV1Router.RegisterRoutes(treeTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(personTransportHTTP.Routes()...)
 	httpServer.RegisterAPIRouters(apiV1Router)
 
 	if err := httpServer.Run(ctx); err != nil {

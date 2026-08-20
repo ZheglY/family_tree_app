@@ -172,6 +172,11 @@ func (a TreeAccess) CanEditSettings() bool {
 	return a.CanView() && a.Membership.Role == RoleOwner
 }
 
+func (a TreeAccess) CanEditData() bool {
+	return a.CanView() &&
+		(a.Membership.Role == RoleOwner || a.Membership.Role == RoleEditor)
+}
+
 func normalizeValues(
 	name string,
 	description string,

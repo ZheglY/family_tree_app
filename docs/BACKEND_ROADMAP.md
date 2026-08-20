@@ -677,6 +677,8 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 ### Этап 5. Person
 
+Статус: завершён 20 августа 2026 года.
+
 Начать с минимальной Person и PersonName:
 
 - создать;
@@ -852,4 +854,6 @@ Family API ограничивает публичные auth-попытки по 
 
 До полного production-hardening Этапа 3 остаются production mailer и аутентифицированный gRPC transport. S3 ещё не подключён и будет добавлен вместе с медиа-срезом; Family API не использует базу Identity Service.
 
-Следующий малый вертикальный срез: Этап 5 — минимальные `Person` и `PersonName`, включая tenant-scoped CRUD, поиск, optimistic version и мягкое удаление/восстановление. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
+Этап 5 завершён: добавлены `Person` и обязательное preferred `PersonName`, транзакционный CRUD агрегата, cursor pagination и поиск по имени, optimistic version, мягкое удаление/восстановление и audit log. Составной внешний ключ защищает принадлежность имени дереву; PostgreSQL integration-тесты покрывают outsider/viewer роли и запрещают cross-tree запись.
+
+Следующий малый вертикальный срез: Этап 6 — `ParentChildRelation`, проверка циклов recursive CTE и ограниченный `/graph`. Production mailer и service-to-service аутентификацию завершить до публичного релиза.

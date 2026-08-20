@@ -253,6 +253,81 @@ try {
         throw "Tree restore did not increment the version"
     }
 
+    $personBody = @{
+        sex = "female"
+        life_status = "alive"
+        biography = "E2E biography"
+        preferred_name = @{
+            given_name = "Anna"
+            family_name = "Volkonskaya"
+            language_code = "en"
+        }
+    } | ConvertTo-Json -Compress -Depth 4
+    $person = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $personBody
+    if ($person.person.version -ne 1 -or $person.preferred_name.full_text -ne "Anna Volkonskaya") {
+        throw "Created person aggregate is invalid"
+    }
+    $personID = $person.person.id
+    $persons = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons?query=anna&limit=10" `
+        -Headers $authorization
+    if (($persons.items | Where-Object { $_.person.id -eq $personID }).Count -ne 1) {
+        throw "Person search did not return the created person"
+    }
+    $personUpdateBody = @{
+        version = 1
+        biography = "Updated E2E biography"
+        preferred_name = @{
+            given_name = "Anna"
+            patronymic = "Petrovna"
+            family_name = "Volkonskaya"
+            language_code = "en"
+        }
+    } | ConvertTo-Json -Compress -Depth 4
+    $updatedPerson = Invoke-RestMethod `
+        -Method Patch `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons/$personID" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $personUpdateBody
+    if ($updatedPerson.person.version -ne 2 -or $updatedPerson.preferred_name.full_text -ne "Anna Petrovna Volkonskaya") {
+        throw "Person update did not update the aggregate and version"
+    }
+    $personDeleteBody = @{version = 2} | ConvertTo-Json -Compress
+    $deletedPerson = Invoke-WebRequest `
+        -Method Delete `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons/$personID" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $personDeleteBody
+    if ($deletedPerson.StatusCode -ne 204) {
+        throw "Person delete returned $($deletedPerson.StatusCode), want 204"
+    }
+    $hiddenPerson = Invoke-WebRequest `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons/$personID" `
+        -Headers $authorization `
+        -SkipHttpErrorCheck
+    if ($hiddenPerson.StatusCode -ne 404) {
+        throw "Deleted person read returned $($hiddenPerson.StatusCode), want 404"
+    }
+    $personRestoreBody = @{version = 3} | ConvertTo-Json -Compress
+    $restoredPerson = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons/$personID/restore" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $personRestoreBody
+    if ($restoredPerson.person.version -ne 4) {
+        throw "Person restore did not increment the version"
+    }
+
     $secondLoginResponse = Invoke-WebRequest `
         -Method Post `
         -Uri "$baseURL/api/v1/auth/login" `
@@ -450,6 +525,7 @@ try {
         refresh_cookie_http_only = $refreshCookie.HttpOnly
         profile_email = $profile.user.email
         tree_lifecycle_version = $restoredTree.tree.version
+        person_lifecycle_version = $restoredPerson.person.version
         sessions_before_revoke = $sessions.items.Count
         refresh_after_logout_all = $afterLogout.StatusCode
         old_password_login = $oldPasswordLogin.StatusCode
