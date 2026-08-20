@@ -404,15 +404,97 @@ try {
         throw "Cyclic relation returned $($cycleResponse.StatusCode), want 422"
     }
 
+    $partnerPersonBody = @{
+        sex = "male"
+        life_status = "alive"
+        preferred_name = @{
+            given_name = "Dmitry"
+            family_name = "Volkonsky"
+            language_code = "en"
+        }
+    } | ConvertTo-Json -Compress -Depth 4
+    $partnerPerson = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $partnerPersonBody
+    $unionBody = @{
+        type = "marriage"
+        note = "E2E family union"
+        members = @(
+            @{
+                person_id = $personID
+                role = "spouse"
+            },
+            @{
+                person_id = $partnerPerson.person.id
+                role = "spouse"
+            }
+        )
+    } | ConvertTo-Json -Compress -Depth 4
+    $familyUnion = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/unions" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $unionBody
+    if ($familyUnion.union.version -ne 1 -or $familyUnion.members.Count -ne 2) {
+        throw "Family union was not created atomically at version 1"
+    }
+    $unionID = $familyUnion.union.id
+    $loadedUnion = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/unions/$unionID" `
+        -Headers $authorization
+    if ($loadedUnion.union.id -ne $unionID -or $loadedUnion.members.Count -ne 2) {
+        throw "Family union read did not return its members"
+    }
+
     $graph = Invoke-RestMethod `
         -Method Get `
         -Uri "$baseURL/api/v1/trees/$treeID/graph?center_person_id=$($childPerson.person.id)&ancestors_depth=1&descendants_depth=1&include_partners=true" `
         -Headers $authorization
-    if ($graph.persons.Count -ne 3 -or $graph.parent_child_relations.Count -ne 2) {
-        throw "Three-generation graph size is persons $($graph.persons.Count), relations $($graph.parent_child_relations.Count)"
+    if ($graph.persons.Count -ne 4 -or $graph.parent_child_relations.Count -ne 2) {
+        throw "Partner graph size is persons $($graph.persons.Count), relations $($graph.parent_child_relations.Count)"
     }
-    if ($graph.unions.Count -ne 0 -or $graph.union_members.Count -ne 0) {
-        throw "Graph returned unions before the union stage"
+    if ($graph.unions.Count -ne 1 -or $graph.union_members.Count -ne 2) {
+        throw "Partner graph size is unions $($graph.unions.Count), members $($graph.union_members.Count)"
+    }
+
+    $unionUpdateBody = @{
+        version = 1
+        type = "civil_union"
+        end_reason = "E2E update"
+    } | ConvertTo-Json -Compress
+    $updatedUnion = Invoke-RestMethod `
+        -Method Patch `
+        -Uri "$baseURL/api/v1/trees/$treeID/unions/$unionID" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $unionUpdateBody
+    if ($updatedUnion.union.version -ne 2 -or $updatedUnion.union.type -ne "civil_union") {
+        throw "Family union update did not increment the version"
+    }
+    $unionMemberBody = @{
+        person_id = $grandchildPerson.person.id
+        role = "member"
+    } | ConvertTo-Json -Compress
+    $unionWithThirdMember = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/unions/$unionID/members" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $unionMemberBody
+    if ($unionWithThirdMember.union.version -ne 3 -or $unionWithThirdMember.members.Count -ne 3) {
+        throw "Union member addition did not update aggregate and version"
+    }
+    $unionWithTwoMembers = Invoke-RestMethod `
+        -Method Delete `
+        -Uri "$baseURL/api/v1/trees/$treeID/unions/$unionID/members/$($grandchildPerson.person.id)" `
+        -Headers $authorization
+    if ($unionWithTwoMembers.union.version -ne 4 -or $unionWithTwoMembers.members.Count -ne 2) {
+        throw "Union member removal did not update aggregate and version"
     }
 
     $relationUpdateBody = @{
@@ -438,6 +520,16 @@ try {
         -Body $relationDeleteBody
     if ($deletedRelation.StatusCode -ne 204) {
         throw "Relation delete returned $($deletedRelation.StatusCode), want 204"
+    }
+    $unionDeleteBody = @{version = 4} | ConvertTo-Json -Compress
+    $deletedUnion = Invoke-WebRequest `
+        -Method Delete `
+        -Uri "$baseURL/api/v1/trees/$treeID/unions/$unionID" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $unionDeleteBody
+    if ($deletedUnion.StatusCode -ne 204) {
+        throw "Family union delete returned $($deletedUnion.StatusCode), want 204"
     }
 
     $secondLoginResponse = Invoke-WebRequest `
@@ -639,6 +731,9 @@ try {
         tree_lifecycle_version = $restoredTree.tree.version
         person_lifecycle_version = $restoredPerson.person.version
         graph_person_count = $graph.persons.Count
+        graph_union_count = $graph.unions.Count
+        union_lifecycle_version = $unionWithTwoMembers.union.version
+        deleted_union_status = $deletedUnion.StatusCode
         cyclic_relation_status = $cycleResponse.StatusCode
         deleted_relation_status = $deletedRelation.StatusCode
         sessions_before_revoke = $sessions.items.Count

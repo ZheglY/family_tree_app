@@ -77,6 +77,23 @@ type Graph struct {
 	CenterPersonID uuid.UUID
 	Persons        []PersonSummary
 	Relations      []ParentChildRelation
+	Unions         []FamilyUnionSummary
+	UnionMembers   []UnionMemberSummary
+}
+
+type FamilyUnionSummary struct {
+	ID        uuid.UUID
+	TreeID    uuid.UUID
+	Type      string
+	EndReason string
+	Note      string
+	Version   int
+}
+
+type UnionMemberSummary struct {
+	UnionID  uuid.UUID
+	PersonID uuid.UUID
+	Role     string
 }
 
 func New(

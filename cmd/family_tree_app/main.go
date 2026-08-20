@@ -28,6 +28,9 @@ import (
 	treepostgres "github.com/ZheglY/family_tree_app/internal/features/trees/repository/postgres"
 	treeservice "github.com/ZheglY/family_tree_app/internal/features/trees/service"
 	treehttp "github.com/ZheglY/family_tree_app/internal/features/trees/transport"
+	unionpostgres "github.com/ZheglY/family_tree_app/internal/features/unions/repository/postgres"
+	unionservice "github.com/ZheglY/family_tree_app/internal/features/unions/service"
+	unionhttp "github.com/ZheglY/family_tree_app/internal/features/unions/transport"
 	"go.uber.org/zap"
 )
 
@@ -136,6 +139,11 @@ func main() {
 	relationService := relationservice.New(relationRepository, treeRepository)
 	relationTransportHTTP := relationhttp.NewHandler(relationService, requireAccess)
 
+	log.Debug("initializing features", zap.String("feature", "unions"))
+	unionRepository := unionpostgres.New(database.Native())
+	unionService := unionservice.New(unionRepository, treeRepository)
+	unionTransportHTTP := unionhttp.NewHandler(unionService, requireAccess)
+
 	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
 	httpConfig := server.NewConfigMust()
@@ -169,6 +177,7 @@ func main() {
 	apiV1Router.RegisterRoutes(treeTransportHTTP.Routes()...)
 	apiV1Router.RegisterRoutes(personTransportHTTP.Routes()...)
 	apiV1Router.RegisterRoutes(relationTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(unionTransportHTTP.Routes()...)
 	httpServer.RegisterAPIRouters(apiV1Router)
 
 	if err := httpServer.Run(ctx); err != nil {

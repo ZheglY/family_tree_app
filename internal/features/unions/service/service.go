@@ -5,22 +5,18 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ZheglY/family_tree_app/internal/features/relationships/domain"
 	treedomain "github.com/ZheglY/family_tree_app/internal/features/trees/domain"
+	"github.com/ZheglY/family_tree_app/internal/features/unions/domain"
 	"github.com/google/uuid"
 )
 
-const (
-	MaxGraphDepth = 6
-	MaxGraphNodes = 500
-)
-
 type Repository interface {
-	CreateAcyclicEditable(context.Context, uuid.UUID, domain.ParentChildRelation) error
-	GetAccessible(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (domain.ParentChildRelation, error)
-	UpdateEditable(context.Context, uuid.UUID, domain.ParentChildRelation) error
+	CreateWithMembersEditable(context.Context, uuid.UUID, domain.Aggregate) error
+	GetAccessible(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (domain.Aggregate, error)
+	UpdateEditable(context.Context, uuid.UUID, domain.FamilyUnion) error
 	SoftDeleteEditable(context.Context, AuditMutation) error
-	LoadGraphAccessible(context.Context, GraphFilter) (domain.Graph, error)
+	AddMemberEditable(context.Context, uuid.UUID, domain.UnionMember) (domain.Aggregate, error)
+	RemoveMemberEditable(context.Context, MemberMutation) (domain.Aggregate, error)
 }
 
 type TreeRepository interface {
@@ -54,7 +50,7 @@ type CreateCommand struct {
 type UpdateCommand struct {
 	ActorUserID uuid.UUID
 	TreeID      uuid.UUID
-	RelationID  uuid.UUID
+	UnionID     uuid.UUID
 	Version     int
 	Values      domain.UpdateValues
 }
@@ -62,51 +58,49 @@ type UpdateCommand struct {
 type MutationCommand struct {
 	ActorUserID uuid.UUID
 	TreeID      uuid.UUID
-	RelationID  uuid.UUID
+	UnionID     uuid.UUID
 	Version     int
 	RequestID   string
 	IPAddress   string
 }
 
-type GraphCommand struct {
-	ActorUserID      uuid.UUID
-	TreeID           uuid.UUID
-	CenterPersonID   uuid.UUID
-	AncestorsDepth   int
-	DescendantsDepth int
-	IncludePartners  bool
+type AddMemberCommand struct {
+	ActorUserID uuid.UUID
+	TreeID      uuid.UUID
+	UnionID     uuid.UUID
+	PersonID    uuid.UUID
+	Role        string
 }
 
-type GraphFilter struct {
-	ActorUserID      uuid.UUID
-	TreeID           uuid.UUID
-	CenterPersonID   uuid.UUID
-	AncestorsDepth   int
-	DescendantsDepth int
-	IncludePartners  bool
-	MaxNodes         int
+type RemoveMemberCommand struct {
+	ActorUserID uuid.UUID
+	TreeID      uuid.UUID
+	UnionID     uuid.UUID
+	PersonID    uuid.UUID
 }
 
 type AuditMutation struct {
 	AuditID     uuid.UUID
 	ActorUserID uuid.UUID
 	TreeID      uuid.UUID
-	RelationID  uuid.UUID
+	UnionID     uuid.UUID
 	Version     int
 	OccurredAt  time.Time
 	RequestID   string
 	IPAddress   string
 }
 
-type Result struct {
-	Relation   domain.ParentChildRelation
-	Membership treedomain.TreeMember
+type MemberMutation struct {
+	ActorUserID uuid.UUID
+	TreeID      uuid.UUID
+	UnionID     uuid.UUID
+	PersonID    uuid.UUID
+	OccurredAt  time.Time
 }
 
-type GraphResult struct {
-	Graph           domain.Graph
-	Membership      treedomain.TreeMember
-	IncludePartners bool
+type Result struct {
+	Aggregate  domain.Aggregate
+	Membership treedomain.TreeMember
 }
 
 func (s *Service) Create(ctx context.Context, command CreateCommand) (Result, error) {
@@ -114,7 +108,7 @@ func (s *Service) Create(ctx context.Context, command CreateCommand) (Result, er
 	if err != nil {
 		return Result{}, err
 	}
-	relation, err := domain.New(
+	aggregate, err := domain.New(
 		s.newID(),
 		command.TreeID,
 		command.ActorUserID,
@@ -124,27 +118,31 @@ func (s *Service) Create(ctx context.Context, command CreateCommand) (Result, er
 	if err != nil {
 		return Result{}, err
 	}
-	if err := s.repository.CreateAcyclicEditable(ctx, command.ActorUserID, relation); err != nil {
+	if err := s.repository.CreateWithMembersEditable(
+		ctx,
+		command.ActorUserID,
+		aggregate,
+	); err != nil {
 		return Result{}, err
 	}
-	return Result{Relation: relation, Membership: treeAccess.Membership}, nil
+	return Result{Aggregate: aggregate, Membership: treeAccess.Membership}, nil
 }
 
 func (s *Service) Get(
 	ctx context.Context,
 	actorUserID uuid.UUID,
 	treeID uuid.UUID,
-	relationID uuid.UUID,
+	unionID uuid.UUID,
 ) (Result, error) {
 	treeAccess, err := s.readableTree(ctx, actorUserID, treeID)
 	if err != nil {
 		return Result{}, err
 	}
-	relation, err := s.repository.GetAccessible(ctx, treeID, relationID, actorUserID)
+	aggregate, err := s.repository.GetAccessible(ctx, treeID, unionID, actorUserID)
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{Relation: relation, Membership: treeAccess.Membership}, nil
+	return Result{Aggregate: aggregate, Membership: treeAccess.Membership}, nil
 }
 
 func (s *Service) Update(ctx context.Context, command UpdateCommand) (Result, error) {
@@ -152,71 +150,94 @@ func (s *Service) Update(ctx context.Context, command UpdateCommand) (Result, er
 	if err != nil {
 		return Result{}, err
 	}
-	relation, err := s.repository.GetAccessible(
+	aggregate, err := s.repository.GetAccessible(
 		ctx,
 		command.TreeID,
-		command.RelationID,
+		command.UnionID,
 		command.ActorUserID,
 	)
 	if err != nil {
 		return Result{}, err
 	}
-	updated, err := domain.ApplyUpdate(relation, command.Version, command.Values, s.now())
+	updated, err := domain.ApplyUpdate(
+		aggregate.Union,
+		command.Version,
+		command.ActorUserID,
+		command.Values,
+		s.now(),
+	)
 	if err != nil {
 		return Result{}, err
 	}
 	if err := s.repository.UpdateEditable(ctx, command.ActorUserID, updated); err != nil {
 		return Result{}, err
 	}
-	return Result{Relation: updated, Membership: treeAccess.Membership}, nil
+	aggregate.Union = updated
+	return Result{Aggregate: aggregate, Membership: treeAccess.Membership}, nil
 }
 
 func (s *Service) Delete(ctx context.Context, command MutationCommand) error {
 	if _, err := s.editableTree(ctx, command.ActorUserID, command.TreeID); err != nil {
 		return err
 	}
-	relation, err := s.repository.GetAccessible(
+	aggregate, err := s.repository.GetAccessible(
 		ctx,
 		command.TreeID,
-		command.RelationID,
+		command.UnionID,
 		command.ActorUserID,
 	)
 	if err != nil {
 		return err
 	}
-	if command.Version <= 0 || relation.Version != command.Version {
-		return domain.ErrRelationVersionConflict
+	if command.Version <= 0 || aggregate.Union.Version != command.Version {
+		return domain.ErrUnionVersionConflict
 	}
 	return s.repository.SoftDeleteEditable(ctx, s.auditMutation(command))
 }
 
-func (s *Service) Graph(ctx context.Context, command GraphCommand) (GraphResult, error) {
-	treeAccess, err := s.readableTree(ctx, command.ActorUserID, command.TreeID)
+func (s *Service) AddMember(ctx context.Context, command AddMemberCommand) (Result, error) {
+	treeAccess, err := s.editableTree(ctx, command.ActorUserID, command.TreeID)
 	if err != nil {
-		return GraphResult{}, err
+		return Result{}, err
 	}
-	if command.CenterPersonID == uuid.Nil || command.AncestorsDepth < 0 ||
-		command.DescendantsDepth < 0 || command.AncestorsDepth > MaxGraphDepth ||
-		command.DescendantsDepth > MaxGraphDepth {
-		return GraphResult{}, domain.ErrInvalidRelation
-	}
-	graph, err := s.repository.LoadGraphAccessible(ctx, GraphFilter{
-		ActorUserID:      command.ActorUserID,
-		TreeID:           command.TreeID,
-		CenterPersonID:   command.CenterPersonID,
-		AncestorsDepth:   command.AncestorsDepth,
-		DescendantsDepth: command.DescendantsDepth,
-		IncludePartners:  command.IncludePartners,
-		MaxNodes:         MaxGraphNodes,
-	})
+	member, err := domain.NewMember(
+		command.UnionID,
+		command.TreeID,
+		domain.MemberValues{PersonID: command.PersonID, Role: command.Role},
+		s.now(),
+	)
 	if err != nil {
-		return GraphResult{}, err
+		return Result{}, err
 	}
-	return GraphResult{
-		Graph:           graph,
-		Membership:      treeAccess.Membership,
-		IncludePartners: command.IncludePartners,
-	}, nil
+	aggregate, err := s.repository.AddMemberEditable(ctx, command.ActorUserID, member)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Aggregate: aggregate, Membership: treeAccess.Membership}, nil
+}
+
+func (s *Service) RemoveMember(
+	ctx context.Context,
+	command RemoveMemberCommand,
+) (Result, error) {
+	treeAccess, err := s.editableTree(ctx, command.ActorUserID, command.TreeID)
+	if err != nil {
+		return Result{}, err
+	}
+	aggregate, err := s.repository.RemoveMemberEditable(
+		ctx,
+		MemberMutation{
+			ActorUserID: command.ActorUserID,
+			TreeID:      command.TreeID,
+			UnionID:     command.UnionID,
+			PersonID:    command.PersonID,
+			OccurredAt:  s.now(),
+		},
+	)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Aggregate: aggregate, Membership: treeAccess.Membership}, nil
 }
 
 func (s *Service) readableTree(
@@ -225,11 +246,11 @@ func (s *Service) readableTree(
 	treeID uuid.UUID,
 ) (treedomain.TreeAccess, error) {
 	if actorUserID == uuid.Nil || treeID == uuid.Nil {
-		return treedomain.TreeAccess{}, domain.ErrRelationNotFound
+		return treedomain.TreeAccess{}, domain.ErrUnionNotFound
 	}
 	access, err := s.treeRepository.GetAccessible(ctx, treeID, actorUserID, false)
 	if errors.Is(err, treedomain.ErrTreeNotFound) {
-		return treedomain.TreeAccess{}, domain.ErrRelationNotFound
+		return treedomain.TreeAccess{}, domain.ErrUnionNotFound
 	}
 	if err != nil {
 		return treedomain.TreeAccess{}, err
@@ -247,7 +268,7 @@ func (s *Service) editableTree(
 		return treedomain.TreeAccess{}, err
 	}
 	if !access.CanEditData() {
-		return treedomain.TreeAccess{}, domain.ErrRelationAccessDenied
+		return treedomain.TreeAccess{}, domain.ErrUnionAccessDenied
 	}
 	return access, nil
 }
@@ -257,7 +278,7 @@ func (s *Service) auditMutation(command MutationCommand) AuditMutation {
 		AuditID:     s.newID(),
 		ActorUserID: command.ActorUserID,
 		TreeID:      command.TreeID,
-		RelationID:  command.RelationID,
+		UnionID:     command.UnionID,
 		Version:     command.Version,
 		OccurredAt:  s.now(),
 		RequestID:   command.RequestID,

@@ -8,8 +8,8 @@ func TestEmbeddedMigrationsAreComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(migrations) != 3 {
-		t.Fatalf("migration count = %d, want 3", len(migrations))
+	if len(migrations) != 4 {
+		t.Fatalf("migration count = %d, want 4", len(migrations))
 	}
 	migration := migrations[0]
 	if migration.Version != 1 || migration.Name != "create_tree_schema" ||
@@ -21,5 +21,8 @@ func TestEmbeddedMigrationsAreComplete(t *testing.T) {
 	}
 	if migrations[2].Version != 3 || migrations[2].Name != "create_parent_child_relations" {
 		t.Fatalf("relation migration = %#v", migrations[2])
+	}
+	if migrations[3].Version != 4 || migrations[3].Name != "create_family_unions" {
+		t.Fatalf("union migration = %#v", migrations[3])
 	}
 }

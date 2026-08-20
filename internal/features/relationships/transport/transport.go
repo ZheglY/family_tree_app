@@ -120,6 +120,21 @@ type personSummaryDTO struct {
 	PreferredName  preferredNameDTO `json:"preferred_name"`
 }
 
+type graphUnionDTO struct {
+	ID        uuid.UUID `json:"id"`
+	TreeID    uuid.UUID `json:"tree_id"`
+	Type      string    `json:"type"`
+	EndReason string    `json:"end_reason"`
+	Note      string    `json:"note"`
+	Version   int       `json:"version"`
+}
+
+type graphUnionMemberDTO struct {
+	UnionID  uuid.UUID `json:"union_id"`
+	PersonID uuid.UUID `json:"person_id"`
+	Role     string    `json:"role"`
+}
+
 type accessDTO struct {
 	Role   string `json:"role"`
 	Status string `json:"status"`
@@ -131,13 +146,13 @@ type relationResponse struct {
 }
 
 type graphResponse struct {
-	CenterPersonID       uuid.UUID          `json:"center_person_id"`
-	Persons              []personSummaryDTO `json:"persons"`
-	ParentChildRelations []relationDTO      `json:"parent_child_relations"`
-	Unions               []struct{}         `json:"unions"`
-	UnionMembers         []struct{}         `json:"union_members"`
-	IncludePartners      bool               `json:"include_partners"`
-	Access               accessDTO          `json:"access"`
+	CenterPersonID       uuid.UUID             `json:"center_person_id"`
+	Persons              []personSummaryDTO    `json:"persons"`
+	ParentChildRelations []relationDTO         `json:"parent_child_relations"`
+	Unions               []graphUnionDTO       `json:"unions"`
+	UnionMembers         []graphUnionMemberDTO `json:"union_members"`
+	IncludePartners      bool                  `json:"include_partners"`
+	Access               accessDTO             `json:"access"`
 }
 
 func (h *Handler) Create(rw http.ResponseWriter, httpRequest *http.Request) {
@@ -429,12 +444,31 @@ func mapGraphResult(result service.GraphResult) graphResponse {
 	for _, relation := range result.Graph.Relations {
 		relations = append(relations, mapRelation(relation))
 	}
+	unions := make([]graphUnionDTO, 0, len(result.Graph.Unions))
+	for _, union := range result.Graph.Unions {
+		unions = append(unions, graphUnionDTO{
+			ID:        union.ID,
+			TreeID:    union.TreeID,
+			Type:      union.Type,
+			EndReason: union.EndReason,
+			Note:      union.Note,
+			Version:   union.Version,
+		})
+	}
+	unionMembers := make([]graphUnionMemberDTO, 0, len(result.Graph.UnionMembers))
+	for _, member := range result.Graph.UnionMembers {
+		unionMembers = append(unionMembers, graphUnionMemberDTO{
+			UnionID:  member.UnionID,
+			PersonID: member.PersonID,
+			Role:     member.Role,
+		})
+	}
 	return graphResponse{
 		CenterPersonID:       result.Graph.CenterPersonID,
 		Persons:              persons,
 		ParentChildRelations: relations,
-		Unions:               make([]struct{}, 0),
-		UnionMembers:         make([]struct{}, 0),
+		Unions:               unions,
+		UnionMembers:         unionMembers,
 		IncludePartners:      result.IncludePartners,
 		Access: accessDTO{
 			Role:   result.Membership.Role,

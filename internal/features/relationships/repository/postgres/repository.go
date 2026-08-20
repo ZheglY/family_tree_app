@@ -407,7 +407,35 @@ func (r *Repository) LoadGraphAccessible(
 	if len(nodeIDs) > filter.MaxNodes {
 		return domain.Graph{}, domain.ErrGraphLimitExceeded
 	}
+	lineageNodeIDs := append([]uuid.UUID(nil), nodeIDs...)
+	var unionIDs []uuid.UUID
+	if filter.IncludePartners {
+		partnerIDs, loadedUnionIDs, err := loadPartnerGraphNodes(
+			ctx,
+			tx,
+			filter.TreeID,
+			lineageNodeIDs,
+		)
+		if err != nil {
+			return domain.Graph{}, err
+		}
+		nodeIDs = appendUniqueUUIDs(nodeIDs, partnerIDs...)
+		unionIDs = loadedUnionIDs
+		if len(nodeIDs) > filter.MaxNodes {
+			return domain.Graph{}, domain.ErrGraphLimitExceeded
+		}
+	}
 	persons, err := loadPersonSummaries(ctx, tx, filter.TreeID, nodeIDs)
+	if err != nil {
+		return domain.Graph{}, err
+	}
+	unions, unionMembers, err := loadGraphUnions(
+		ctx,
+		tx,
+		filter.TreeID,
+		unionIDs,
+		nodeIDs,
+	)
 	if err != nil {
 		return domain.Graph{}, err
 	}
@@ -422,7 +450,146 @@ func (r *Repository) LoadGraphAccessible(
 		CenterPersonID: filter.CenterPersonID,
 		Persons:        persons,
 		Relations:      relations,
+		Unions:         unions,
+		UnionMembers:   unionMembers,
 	}, nil
+}
+
+func loadPartnerGraphNodes(
+	ctx context.Context,
+	tx pgx.Tx,
+	treeID uuid.UUID,
+	lineageNodeIDs []uuid.UUID,
+) ([]uuid.UUID, []uuid.UUID, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT u.id, member.person_id
+		FROM family_unions u
+		JOIN union_members anchor
+		  ON anchor.tree_id = u.tree_id
+		 AND anchor.union_id = u.id
+		JOIN union_members member
+		  ON member.tree_id = u.tree_id
+		 AND member.union_id = u.id
+		JOIN persons person
+		  ON person.tree_id = member.tree_id
+		 AND person.id = member.person_id
+		 AND person.deleted_at IS NULL
+		WHERE u.tree_id = $1
+		  AND u.deleted_at IS NULL
+		  AND anchor.person_id = ANY($2::uuid[])
+		  AND (
+			SELECT count(*)
+			FROM union_members active_member
+			JOIN persons active_person
+			  ON active_person.tree_id = active_member.tree_id
+			 AND active_person.id = active_member.person_id
+			 AND active_person.deleted_at IS NULL
+			WHERE active_member.tree_id = u.tree_id
+			  AND active_member.union_id = u.id
+		  ) >= 2
+		ORDER BY u.id, member.person_id
+	`, treeID, lineageNodeIDs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load graph partner nodes: %w", err)
+	}
+	defer rows.Close()
+	var personIDs []uuid.UUID
+	var unionIDs []uuid.UUID
+	for rows.Next() {
+		var unionID, personID uuid.UUID
+		if err := rows.Scan(&unionID, &personID); err != nil {
+			return nil, nil, fmt.Errorf("scan graph partner node: %w", err)
+		}
+		personIDs = appendUniqueUUIDs(personIDs, personID)
+		unionIDs = appendUniqueUUIDs(unionIDs, unionID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate graph partner nodes: %w", err)
+	}
+	return personIDs, unionIDs, nil
+}
+
+func loadGraphUnions(
+	ctx context.Context,
+	tx pgx.Tx,
+	treeID uuid.UUID,
+	unionIDs []uuid.UUID,
+	nodeIDs []uuid.UUID,
+) ([]domain.FamilyUnionSummary, []domain.UnionMemberSummary, error) {
+	if len(unionIDs) == 0 {
+		return []domain.FamilyUnionSummary{}, []domain.UnionMemberSummary{}, nil
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT id, tree_id, type, end_reason, note, version
+		FROM family_unions
+		WHERE tree_id = $1
+		  AND id = ANY($2::uuid[])
+		  AND deleted_at IS NULL
+		ORDER BY created_at, id
+	`, treeID, unionIDs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load graph unions: %w", err)
+	}
+	var unions []domain.FamilyUnionSummary
+	for rows.Next() {
+		var union domain.FamilyUnionSummary
+		if err := rows.Scan(
+			&union.ID,
+			&union.TreeID,
+			&union.Type,
+			&union.EndReason,
+			&union.Note,
+			&union.Version,
+		); err != nil {
+			rows.Close()
+			return nil, nil, fmt.Errorf("scan graph union: %w", err)
+		}
+		unions = append(unions, union)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, nil, fmt.Errorf("iterate graph unions: %w", err)
+	}
+	rows.Close()
+	rows, err = tx.Query(ctx, `
+		SELECT union_id, person_id, role
+		FROM union_members
+		WHERE tree_id = $1
+		  AND union_id = ANY($2::uuid[])
+		  AND person_id = ANY($3::uuid[])
+		ORDER BY union_id, created_at, person_id
+	`, treeID, unionIDs, nodeIDs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load graph union members: %w", err)
+	}
+	defer rows.Close()
+	var members []domain.UnionMemberSummary
+	for rows.Next() {
+		var member domain.UnionMemberSummary
+		if err := rows.Scan(&member.UnionID, &member.PersonID, &member.Role); err != nil {
+			return nil, nil, fmt.Errorf("scan graph union member: %w", err)
+		}
+		members = append(members, member)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate graph union members: %w", err)
+	}
+	return unions, members, nil
+}
+
+func appendUniqueUUIDs(destination []uuid.UUID, values ...uuid.UUID) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(destination)+len(values))
+	for _, value := range destination {
+		seen[value] = struct{}{}
+	}
+	for _, value := range values {
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		destination = append(destination, value)
+	}
+	return destination
 }
 
 func loadPersonSummaries(

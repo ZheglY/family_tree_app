@@ -42,7 +42,7 @@ func TestRepositoryEnforcesTenantIsolationAndTreeLifecycle(t *testing.T) {
 	if err := runner.Up(ctx); err != nil {
 		t.Fatalf("apply migrations twice: %v", err)
 	}
-	if version, err := runner.CurrentVersion(ctx); err != nil || version != 3 {
+	if version, err := runner.CurrentVersion(ctx); err != nil || version != 4 {
 		t.Fatalf("migration version = %d, error = %v", version, err)
 	}
 
