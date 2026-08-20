@@ -345,6 +345,30 @@ try {
         throw "Login after password recovery returned $($recoveredLogin.StatusCode), want 200"
     }
 
+    $wrongLoginBody = @{
+        email = $email
+        password = "definitely wrong password"
+    } | ConvertTo-Json -Compress
+    $rateLimitStatus = 0
+    for ($attempt = 0; $attempt -lt 5; $attempt++) {
+        $limitedLogin = Invoke-WebRequest `
+            -Method Post `
+            -Uri "$baseURL/api/v1/auth/login" `
+            -ContentType "application/json" `
+            -Body $wrongLoginBody `
+            -SkipHttpErrorCheck
+        $rateLimitStatus = $limitedLogin.StatusCode
+        if ($attempt -lt 4 -and $rateLimitStatus -ne 401) {
+            throw "Pre-limit login returned $rateLimitStatus, want 401"
+        }
+    }
+    if ($rateLimitStatus -ne 429) {
+        throw "Login rate limit returned $rateLimitStatus, want 429"
+    }
+    if ([string]::IsNullOrWhiteSpace($limitedLogin.Headers["Retry-After"])) {
+        throw "Login rate limit response did not include Retry-After"
+    }
+
     [pscustomobject]@{
         health = $health.response
         registered_status = $register.user.status
@@ -357,6 +381,7 @@ try {
         refresh_after_password_reset = $refreshAfterReset.StatusCode
         reused_reset_token = $reusedReset.StatusCode
         recovered_login = $recoveredLogin.StatusCode
+        login_rate_limit = $rateLimitStatus
     }
 } catch {
     foreach ($logName in @(

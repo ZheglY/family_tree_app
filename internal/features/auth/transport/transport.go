@@ -30,17 +30,20 @@ type Handler struct {
 	service       AuthService
 	refreshCookie *RefreshCookie
 	requireAccess coremiddleware.Middleware
+	rateLimiter   AuthRateLimiter
 }
 
 func NewHandler(
 	service AuthService,
 	refreshCookie *RefreshCookie,
 	requireAccess coremiddleware.Middleware,
+	rateLimiter AuthRateLimiter,
 ) *Handler {
 	return &Handler{
 		service:       service,
 		refreshCookie: refreshCookie,
 		requireAccess: requireAccess,
+		rateLimiter:   rateLimiter,
 	}
 }
 

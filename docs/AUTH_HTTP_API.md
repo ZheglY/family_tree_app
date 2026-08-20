@@ -63,6 +63,26 @@ Validation requires:
 
 The current MVP supports one active signing key. Production key rotation with an overlap window is a later hardening task.
 
+## Authentication rate limiting
+
+Public authentication attempts are limited before Identity is called. Login, registration and password recovery use both an IP bucket and an HMAC-obfuscated account bucket; verification, refresh and reset use an IP bucket. Authenticated password changes are limited by IP and user ID. Rejected requests return `429 too_many_requests` with `Retry-After`; a limiter storage failure returns `503` and fails closed.
+
+Default policies:
+
+| Operation | IP bucket | Account bucket |
+|---|---:|---:|
+| register | 10/hour | 3/hour |
+| login | 30/minute | 10/minute |
+| verify email | 20/minute | — |
+| refresh | 60/minute | — |
+| forgot password | 20/hour | 3/hour |
+| reset password | 10/minute | — |
+| change password | 20/minute | 5/minute |
+
+The default in-memory backend is bounded and suitable for one development process. Multi-instance deployments must set `AUTH_RATE_LIMIT_BACKEND=redis` and provide the same secret of at least 32 bytes through `AUTH_RATE_LIMIT_KEY_SECRET`. Redis receives only HMAC-derived subjects, never raw emails, user IDs, IP addresses, passwords or tokens. Start the local Redis adapter with `docker compose up -d --wait auth-redis`.
+
+The IP subject currently comes from the direct socket peer (`RemoteAddr`); untrusted forwarding headers are deliberately ignored. A reverse proxy deployment must preserve the source address or add a trusted-proxy allowlist before public release, otherwise all clients behind one proxy would share its IP bucket.
+
 ## Internal gRPC client
 
 Every Identity call has a configured deadline and propagates the HTTP request ID as `x-request-id` metadata. `Unavailable` and deadline failures become the standard HTTP `503 service_unavailable` envelope. Automatic retries are not enabled for state-changing operations.
@@ -87,7 +107,7 @@ With the local Identity PostgreSQL container running, execute:
 ./scripts/e2e-auth-smoke.ps1
 ```
 
-The script builds temporary binaries, migrates the `identity_test` database, starts both services in hidden processes, and exercises registration, email verification, login, refresh, session management, authenticated password change and password recovery over the real HTTP and gRPC transports. It stops the processes and removes its temporary binaries and logs on completion.
+The script builds temporary binaries, migrates the `identity_test` database, starts both services in hidden processes, and exercises registration, email verification, login, refresh, session management, authenticated password change, password recovery and a real `429` login limit over the HTTP and gRPC transports. It stops the processes and removes its temporary binaries and logs on completion.
 
 ## Protobuf contract ownership
 

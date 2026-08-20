@@ -844,6 +844,8 @@ Family API также реализует `GET /users/me`, список акти�
 
 Identity Service и Family API реализуют смену пароля после проверки текущего пароля и восстановление через одноразовый часовой токен. Оба сценария атомарно отзывают серверные сессии; HTTP-ответ восстановления не раскрывает наличие email.
 
-До полного завершения Этапа 3 остаются rate limit, production mailer и аутентифицированный gRPC transport. PostgreSQL семейного домена и S3 ещё не подключены; они не должны использовать базу Identity Service.
+Family API ограничивает публичные auth-попытки по IP и HMAC-обезличенному аккаунту. Для одного development-процесса доступен ограниченный in-memory backend, для нескольких экземпляров — атомарный Redis backend.
 
-Следующий малый вертикальный срез: rate limiting для публичных auth endpoint. Затем можно переходить к Этапу 4: `FamilyTree`, `TreeMember` и обязательная tenant isolation.
+До полного production-hardening Этапа 3 остаются production mailer и аутентифицированный gRPC transport. PostgreSQL семейного домена и S3 ещё не подключены; они не должны использовать базу Identity Service.
+
+Следующий малый вертикальный срез: Этап 4 — `FamilyTree`, `TreeMember` и обязательная tenant isolation. Production mailer и service-to-service аутентификацию завершить до публичного релиза.

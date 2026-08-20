@@ -9,6 +9,7 @@ import (
 
 	"github.com/ZheglY/family_tree_app/internal/features/auth/access"
 	identityclient "github.com/ZheglY/family_tree_app/internal/features/auth/identity"
+	authratelimit "github.com/ZheglY/family_tree_app/internal/features/auth/ratelimit"
 	authservice "github.com/ZheglY/family_tree_app/internal/features/auth/service"
 	authhttp "github.com/ZheglY/family_tree_app/internal/features/auth/transport"
 	healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
@@ -80,10 +81,24 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	rateLimitConfig, err := authratelimit.LoadConfig()
+	if err != nil {
+		panic(err)
+	}
+	authRateLimiter, err := authratelimit.New(ctx, rateLimitConfig)
+	if err != nil {
+		panic(fmt.Errorf("initialize auth rate limiter: %w", err))
+	}
+	defer func() {
+		if err := authRateLimiter.Close(); err != nil {
+			log.Warn("close auth rate limiter", zap.Error(err))
+		}
+	}()
 	authTransportHTTP := authhttp.NewHandler(
 		authService,
 		refreshCookie,
 		access.RequireAccess(accessVerifier),
+		authRateLimiter,
 	)
 
 	log.Debug("initializing HTTP server")

@@ -110,6 +110,16 @@ func (h *Handler) ChangePassword(rw http.ResponseWriter, request *http.Request) 
 	if !decodeRequest(rw, request, &body) {
 		return
 	}
+	if !h.allowAuthAttempt(
+		rw,
+		request,
+		"change",
+		principal.UserID.String(),
+		changeIPRule,
+		changeAccountRule,
+	) {
+		return
+	}
 
 	if err := h.service.ChangePassword(request.Context(), service.ChangePasswordCommand{
 		UserID:          principal.UserID,
