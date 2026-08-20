@@ -31,6 +31,17 @@ type RefreshCommand struct {
 	IPAddress    string
 }
 
+type ChangePasswordCommand struct {
+	UserID          uuid.UUID
+	CurrentPassword string
+	NewPassword     string
+}
+
+type ResetPasswordCommand struct {
+	Token       string
+	NewPassword string
+}
+
 type IdentityGateway interface {
 	Register(context.Context, RegisterCommand) (RegisterResult, error)
 	VerifyEmail(context.Context, string) (model.User, error)
@@ -42,6 +53,9 @@ type IdentityGateway interface {
 	GetUser(context.Context, uuid.UUID) (model.User, error)
 	ListSessions(context.Context, uuid.UUID) ([]model.UserSession, error)
 	RevokeSession(context.Context, uuid.UUID, uuid.UUID) error
+	ChangePassword(context.Context, ChangePasswordCommand) error
+	ForgotPassword(context.Context, string) error
+	ResetPassword(context.Context, ResetPasswordCommand) error
 }
 
 type AuthService struct {
@@ -117,4 +131,22 @@ func (s *AuthService) RevokeSession(
 	sessionID uuid.UUID,
 ) error {
 	return s.identity.RevokeSession(ctx, userID, sessionID)
+}
+
+func (s *AuthService) ChangePassword(
+	ctx context.Context,
+	command ChangePasswordCommand,
+) error {
+	return s.identity.ChangePassword(ctx, command)
+}
+
+func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
+	return s.identity.ForgotPassword(ctx, email)
+}
+
+func (s *AuthService) ResetPassword(
+	ctx context.Context,
+	command ResetPasswordCommand,
+) error {
+	return s.identity.ResetPassword(ctx, command)
 }

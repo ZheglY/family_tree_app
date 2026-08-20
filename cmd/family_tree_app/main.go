@@ -7,18 +7,35 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	corepostgres "github.com/ZheglY/family_tree_app/internal/core/postgres"
+	s3storage "github.com/ZheglY/family_tree_app/internal/core/storage/s3"
+	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
+	"github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
 	"github.com/ZheglY/family_tree_app/internal/features/auth/access"
 	identityclient "github.com/ZheglY/family_tree_app/internal/features/auth/identity"
+	authratelimit "github.com/ZheglY/family_tree_app/internal/features/auth/ratelimit"
 	authservice "github.com/ZheglY/family_tree_app/internal/features/auth/service"
 	authhttp "github.com/ZheglY/family_tree_app/internal/features/auth/transport"
 	healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
 	healthservice "github.com/ZheglY/family_tree_app/internal/features/health/service"
 	healthhttp "github.com/ZheglY/family_tree_app/internal/features/health/transport"
+	mediapostgres "github.com/ZheglY/family_tree_app/internal/features/media/repository/postgres"
+	mediaservice "github.com/ZheglY/family_tree_app/internal/features/media/service"
+	mediahttp "github.com/ZheglY/family_tree_app/internal/features/media/transport"
+	personpostgres "github.com/ZheglY/family_tree_app/internal/features/persons/repository/postgres"
+	personservice "github.com/ZheglY/family_tree_app/internal/features/persons/service"
+	personhttp "github.com/ZheglY/family_tree_app/internal/features/persons/transport"
+	relationpostgres "github.com/ZheglY/family_tree_app/internal/features/relationships/repository/postgres"
+	relationservice "github.com/ZheglY/family_tree_app/internal/features/relationships/service"
+	relationhttp "github.com/ZheglY/family_tree_app/internal/features/relationships/transport"
+	treepostgres "github.com/ZheglY/family_tree_app/internal/features/trees/repository/postgres"
+	treeservice "github.com/ZheglY/family_tree_app/internal/features/trees/service"
+	treehttp "github.com/ZheglY/family_tree_app/internal/features/trees/transport"
+	unionpostgres "github.com/ZheglY/family_tree_app/internal/features/unions/repository/postgres"
+	unionservice "github.com/ZheglY/family_tree_app/internal/features/unions/service"
+	unionhttp "github.com/ZheglY/family_tree_app/internal/features/unions/transport"
 	"go.uber.org/zap"
-
-	"github.com/ZheglY/family_tree_app/internal/core/logger"
-	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
-	"github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
 )
 
 func main() {
@@ -44,8 +61,29 @@ func main() {
 	}
 	defer log.Close()
 
+	postgresConfig, err := corepostgres.LoadConfig()
+	if err != nil {
+		panic(err)
+	}
+	database, err := corepostgres.Open(ctx, postgresConfig, log)
+	if err != nil {
+		panic(err)
+	}
+	defer database.Close()
+	objectStorageConfig, err := s3storage.LoadConfig()
+	if err != nil {
+		panic(err)
+	}
+	objectStorage, err := s3storage.New(ctx, objectStorageConfig)
+	if err != nil {
+		panic(fmt.Errorf("initialize S3 object storage: %w", err))
+	}
+	if err := objectStorage.EnsureBucket(ctx); err != nil {
+		panic(fmt.Errorf("ensure private S3 bucket: %w", err))
+	}
+
 	log.Debug("initializing features", zap.String("feature", "health"))
-	healthRepository := healthrepository.NewHealthRepository("pool")
+	healthRepository := healthrepository.NewHealthRepository(database.Ping, objectStorage.Ping)
 	healthService := healthservice.NewHealthService(healthRepository)
 	healthTransportHTTP := healthhttp.NewHealthHTTPHandler(healthService)
 
@@ -72,6 +110,7 @@ func main() {
 	if err != nil {
 		panic(fmt.Errorf("initialize access token verifier: %w", err))
 	}
+	requireAccess := access.RequireAccess(accessVerifier)
 	cookieConfig, err := authhttp.LoadCookieConfig()
 	if err != nil {
 		panic(err)
@@ -80,11 +119,55 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	rateLimitConfig, err := authratelimit.LoadConfig()
+	if err != nil {
+		panic(err)
+	}
+	authRateLimiter, err := authratelimit.New(ctx, rateLimitConfig)
+	if err != nil {
+		panic(fmt.Errorf("initialize auth rate limiter: %w", err))
+	}
+	defer func() {
+		if err := authRateLimiter.Close(); err != nil {
+			log.Warn("close auth rate limiter", zap.Error(err))
+		}
+	}()
 	authTransportHTTP := authhttp.NewHandler(
 		authService,
 		refreshCookie,
-		access.RequireAccess(accessVerifier),
+		requireAccess,
+		authRateLimiter,
 	)
+
+	log.Debug("initializing features", zap.String("feature", "trees"))
+	treeRepository := treepostgres.New(database.Native())
+	treeService := treeservice.New(treeRepository)
+	treeTransportHTTP := treehttp.NewHandler(treeService, requireAccess)
+
+	log.Debug("initializing features", zap.String("feature", "persons"))
+	personRepository := personpostgres.New(database.Native())
+	personService := personservice.New(personRepository, treeRepository)
+	personTransportHTTP := personhttp.NewHandler(personService, requireAccess)
+
+	log.Debug("initializing features", zap.String("feature", "relationships"))
+	relationRepository := relationpostgres.New(database.Native())
+	relationService := relationservice.New(relationRepository, treeRepository)
+	relationTransportHTTP := relationhttp.NewHandler(relationService, requireAccess)
+
+	log.Debug("initializing features", zap.String("feature", "unions"))
+	unionRepository := unionpostgres.New(database.Native())
+	unionService := unionservice.New(unionRepository, treeRepository)
+	unionTransportHTTP := unionhttp.NewHandler(unionService, requireAccess)
+
+	log.Debug("initializing features", zap.String("feature", "media"))
+	mediaRepository := mediapostgres.New(database.Native())
+	mediaService := mediaservice.New(
+		mediaRepository,
+		treeRepository,
+		objectStorage,
+		objectStorageConfig.MaxUploadBytes,
+	)
+	mediaTransportHTTP := mediahttp.NewHandler(mediaService, requireAccess)
 
 	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
@@ -116,6 +199,11 @@ func main() {
 	httpServer.RegisterRoutes(healthTransportHTTP.Routes()...)
 	apiV1Router := server.NewAPIVersionRouter(server.ApiVersion1)
 	apiV1Router.RegisterRoutes(authTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(treeTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(personTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(relationTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(unionTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(mediaTransportHTTP.Routes()...)
 	httpServer.RegisterAPIRouters(apiV1Router)
 
 	if err := httpServer.Run(ctx); err != nil {

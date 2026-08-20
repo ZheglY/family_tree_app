@@ -8,15 +8,21 @@ import (
 	"strings"
 	"testing"
 
+	apperrors "github.com/ZheglY/family_tree_app/internal/core/errors"
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
 )
 
 type healthServiceStub struct {
-	err error
+	liveErr  error
+	readyErr error
 }
 
-func (s healthServiceStub) GetHealth(context.Context) error {
-	return s.err
+func (s healthServiceStub) Live(context.Context) error {
+	return s.liveErr
+}
+
+func (s healthServiceStub) Ready(context.Context) error {
+	return s.readyErr
 }
 
 func TestGetHealthReturnsOK(t *testing.T) {
@@ -26,7 +32,7 @@ func TestGetHealthReturnsOK(t *testing.T) {
 	request := requestWithLogger(httptest.NewRequest(http.MethodGet, "/health/live", nil))
 	recorder := httptest.NewRecorder()
 
-	handler.GetHealth(recorder, request)
+	handler.Live(recorder, request)
 
 	if got, want := recorder.Code, http.StatusOK; got != want {
 		t.Fatalf("status code = %d, want %d", got, want)
@@ -40,11 +46,11 @@ func TestGetHealthReturnsOK(t *testing.T) {
 func TestGetHealthStopsAfterError(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHealthHTTPHandler(healthServiceStub{err: errors.New("health failed")})
+	handler := NewHealthHTTPHandler(healthServiceStub{liveErr: errors.New("health failed")})
 	request := requestWithLogger(httptest.NewRequest(http.MethodGet, "/health/live", nil))
 	recorder := httptest.NewRecorder()
 
-	handler.GetHealth(recorder, request)
+	handler.Live(recorder, request)
 
 	if got, want := recorder.Code, http.StatusInternalServerError; got != want {
 		t.Fatalf("status code = %d, want %d", got, want)
@@ -52,6 +58,19 @@ func TestGetHealthStopsAfterError(t *testing.T) {
 
 	if strings.Contains(recorder.Body.String(), `"response":"OK"`) {
 		t.Fatalf("success response was written after error: %s", recorder.Body.String())
+	}
+}
+
+func TestReadyReturnsServiceUnavailable(t *testing.T) {
+	t.Parallel()
+	handler := NewHealthHTTPHandler(healthServiceStub{readyErr: apperrors.ErrServiceUnavailable})
+	request := requestWithLogger(httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+	recorder := httptest.NewRecorder()
+
+	handler.Ready(recorder, request)
+
+	if got, want := recorder.Code, http.StatusServiceUnavailable; got != want {
+		t.Fatalf("status code = %d, want %d", got, want)
 	}
 }
 

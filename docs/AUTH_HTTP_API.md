@@ -14,9 +14,12 @@ All endpoints use JSON under `/api/v1`:
 | `POST` | `/auth/refresh` | refresh cookie | Rotates the refresh token and returns a new access token |
 | `POST` | `/auth/logout` | refresh cookie if present | Revokes one session and clears the cookie |
 | `POST` | `/auth/logout-all` | bearer access token | Revokes every session owned by the authenticated user |
+| `POST` | `/auth/forgot-password` | public | Returns a generic `202` and, for an active account, sends a reset link |
+| `POST` | `/auth/reset-password` | public | Consumes a reset token, changes the password and revokes all sessions |
 | `GET` | `/users/me` | bearer access token | Returns the current account profile |
 | `GET` | `/users/me/sessions` | bearer access token | Lists active, non-expired sessions and marks the current one |
 | `DELETE` | `/users/me/sessions/{session_id}` | bearer access token | Revokes one session owned by the current user |
+| `POST` | `/users/me/change-password` | bearer access token plus current password | Changes the password and revokes all sessions |
 
 Login request example:
 
@@ -44,6 +47,8 @@ Login and refresh return only the short-lived access token in JSON:
 
 The refresh token is never included in JSON. It is stored in an `HttpOnly` cookie whose default `SameSite` policy is `Strict`. Local HTTP development defaults `Secure` to false; every HTTPS deployment must set `AUTH_REFRESH_COOKIE_SECURE=true`.
 
+Password reset tokens are random, single-use and expire after one hour. A newer recovery request invalidates the previous token. Both password-changing endpoints clear the browser refresh cookie, and Identity revokes all server-side sessions. Because access tokens are locally validated JWTs, an already issued access token can remain valid until its short 15-minute expiry; clients must discard it after a successful password change or reset.
+
 ## Access-token validation
 
 At startup, Family API requests the active public key and validation metadata from Identity Service. It then validates access tokens locally without a gRPC call on every protected request.
@@ -57,6 +62,26 @@ Validation requires:
 - UUID values for the user and session identifiers.
 
 The current MVP supports one active signing key. Production key rotation with an overlap window is a later hardening task.
+
+## Authentication rate limiting
+
+Public authentication attempts are limited before Identity is called. Login, registration and password recovery use both an IP bucket and an HMAC-obfuscated account bucket; verification, refresh and reset use an IP bucket. Authenticated password changes are limited by IP and user ID. Rejected requests return `429 too_many_requests` with `Retry-After`; a limiter storage failure returns `503` and fails closed.
+
+Default policies:
+
+| Operation | IP bucket | Account bucket |
+|---|---:|---:|
+| register | 10/hour | 3/hour |
+| login | 30/minute | 10/minute |
+| verify email | 20/minute | — |
+| refresh | 60/minute | — |
+| forgot password | 20/hour | 3/hour |
+| reset password | 10/minute | — |
+| change password | 20/minute | 5/minute |
+
+The default in-memory backend is bounded and suitable for one development process. Multi-instance deployments must set `AUTH_RATE_LIMIT_BACKEND=redis` and provide the same secret of at least 32 bytes through `AUTH_RATE_LIMIT_KEY_SECRET`. Redis receives only HMAC-derived subjects, never raw emails, user IDs, IP addresses, passwords or tokens. Start the local Redis adapter with `docker compose up -d --wait auth-redis`.
+
+The IP subject currently comes from the direct socket peer (`RemoteAddr`); untrusted forwarding headers are deliberately ignored. A reverse proxy deployment must preserve the source address or add a trusted-proxy allowlist before public release, otherwise all clients behind one proxy would share its IP bucket.
 
 ## Internal gRPC client
 
@@ -82,7 +107,7 @@ With the local Identity PostgreSQL container running, execute:
 ./scripts/e2e-auth-smoke.ps1
 ```
 
-The script builds temporary binaries, migrates the `identity_test` database, starts both services in hidden processes, and exercises registration, email verification, login, refresh and logout-all over the real HTTP and gRPC transports. It stops the processes and removes its temporary binaries and logs on completion.
+The script builds temporary binaries, migrates the Identity and Family test databases, starts both services in hidden processes, and exercises registration, email verification, login, refresh, session management, family-tree/person/relationship lifecycles, a bounded three-generation graph, authenticated password change, password recovery and a real `429` login limit over the HTTP and gRPC transports. It stops the processes and removes its temporary binaries and logs on completion.
 
 ## Protobuf contract ownership
 

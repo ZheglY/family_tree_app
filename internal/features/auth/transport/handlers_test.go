@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/response"
 	"github.com/ZheglY/family_tree_app/internal/features/auth/access"
 	"github.com/ZheglY/family_tree_app/internal/features/auth/model"
+	"github.com/ZheglY/family_tree_app/internal/features/auth/ratelimit"
 	"github.com/ZheglY/family_tree_app/internal/features/auth/service"
 	"github.com/google/uuid"
 )
@@ -25,7 +27,26 @@ type authServiceStub struct {
 	revokedCount    int64
 	sessions        []model.UserSession
 	revokedSession  uuid.UUID
+	changePassword  service.ChangePasswordCommand
+	forgotEmail     string
+	resetPassword   service.ResetPasswordCommand
 	err             error
+}
+
+type rateLimiterStub struct {
+	decision ratelimit.Decision
+	err      error
+	scopes   []string
+}
+
+func (s *rateLimiterStub) Allow(
+	_ context.Context,
+	scope string,
+	_ string,
+	_ ratelimit.Rule,
+) (ratelimit.Decision, error) {
+	s.scopes = append(s.scopes, scope)
+	return s.decision, s.err
 }
 
 func (s *authServiceStub) Register(
@@ -83,6 +104,27 @@ func (s *authServiceStub) RevokeSession(
 	sessionID uuid.UUID,
 ) error {
 	s.revokedSession = sessionID
+	return s.err
+}
+
+func (s *authServiceStub) ChangePassword(
+	_ context.Context,
+	command service.ChangePasswordCommand,
+) error {
+	s.changePassword = command
+	return s.err
+}
+
+func (s *authServiceStub) ForgotPassword(_ context.Context, email string) error {
+	s.forgotEmail = email
+	return s.err
+}
+
+func (s *authServiceStub) ResetPassword(
+	_ context.Context,
+	command service.ResetPasswordCommand,
+) error {
+	s.resetPassword = command
 	return s.err
 }
 
@@ -241,7 +283,129 @@ func TestRevokeCurrentSessionClearsRefreshCookie(t *testing.T) {
 	}
 }
 
+func TestChangePasswordUsesAuthenticatedPrincipalAndClearsCookie(t *testing.T) {
+	userID := uuid.New()
+	serviceStub := &authServiceStub{session: testSession()}
+	handler := testHandler(t, serviceStub)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/users/me/change-password",
+		strings.NewReader(`{"current_password":"current value","new_password":"new correct horse battery staple"}`),
+	)
+	request = request.WithContext(access.NewPrincipalContext(
+		request.Context(),
+		access.Principal{UserID: userID, SessionID: uuid.New()},
+	))
+	recorder := serveHandler(handler.ChangePassword, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+	if serviceStub.changePassword.UserID != userID ||
+		serviceStub.changePassword.CurrentPassword != "current value" ||
+		serviceStub.changePassword.NewPassword != "new correct horse battery staple" {
+		t.Fatalf("change password command = %#v", serviceStub.changePassword)
+	}
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cleared cookies = %#v", cookies)
+	}
+}
+
+func TestForgotPasswordReturnsGenericAcceptedResponse(t *testing.T) {
+	serviceStub := &authServiceStub{session: testSession()}
+	handler := testHandler(t, serviceStub)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/forgot-password",
+		strings.NewReader(`{"email":"missing@example.com"}`),
+	)
+	recorder := serveHandler(handler.ForgotPassword, request)
+
+	if recorder.Code != http.StatusAccepted || recorder.Body.Len() != 0 {
+		t.Fatalf("status = %d, body = %q", recorder.Code, recorder.Body.String())
+	}
+	if serviceStub.forgotEmail != "missing@example.com" {
+		t.Fatalf("forgot email = %q", serviceStub.forgotEmail)
+	}
+}
+
+func TestResetPasswordClearsRefreshCookie(t *testing.T) {
+	serviceStub := &authServiceStub{session: testSession()}
+	handler := testHandler(t, serviceStub)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/reset-password",
+		strings.NewReader(`{"token":"reset-token","new_password":"new correct horse battery staple"}`),
+	)
+	recorder := serveHandler(handler.ResetPassword, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+	if serviceStub.resetPassword.Token != "reset-token" ||
+		serviceStub.resetPassword.NewPassword != "new correct horse battery staple" {
+		t.Fatalf("reset command = %#v", serviceStub.resetPassword)
+	}
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cleared cookies = %#v", cookies)
+	}
+}
+
+func TestForgotPasswordRateLimitReturnsRetryAfter(t *testing.T) {
+	serviceStub := &authServiceStub{session: testSession()}
+	limiter := &rateLimiterStub{decision: ratelimit.Decision{
+		RetryAfter: 30 * time.Second,
+	}}
+	handler := testHandlerWithLimiter(t, serviceStub, limiter)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/forgot-password",
+		strings.NewReader(`{"email":"family@example.com"}`),
+	)
+	recorder := serveHandler(handler.ForgotPassword, request)
+
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+	if recorder.Header().Get("Retry-After") != "30" {
+		t.Fatalf("Retry-After = %q", recorder.Header().Get("Retry-After"))
+	}
+	if serviceStub.forgotEmail != "" {
+		t.Fatal("forgot-password service called after rate limit rejection")
+	}
+}
+
+func TestRateLimitBackendFailureReturnsServiceUnavailable(t *testing.T) {
+	handler := testHandlerWithLimiter(
+		t,
+		&authServiceStub{session: testSession()},
+		&rateLimiterStub{err: errors.New("Redis unavailable")},
+	)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/login",
+		strings.NewReader(`{"email":"family@example.com","password":"password"}`),
+	)
+	recorder := serveHandler(handler.Login, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body)
+	}
+}
+
 func testHandler(t *testing.T, serviceStub AuthService) *Handler {
+	return testHandlerWithLimiter(t, serviceStub, &rateLimiterStub{
+		decision: ratelimit.Decision{Allowed: true},
+	})
+}
+
+func testHandlerWithLimiter(
+	t *testing.T,
+	serviceStub AuthService,
+	limiter AuthRateLimiter,
+) *Handler {
 	t.Helper()
 	refreshCookie, err := NewRefreshCookie(CookieConfig{
 		Name:     "family_tree_refresh",
@@ -252,7 +416,12 @@ func testHandler(t *testing.T, serviceStub AuthService) *Handler {
 	if err != nil {
 		t.Fatalf("NewRefreshCookie() error = %v", err)
 	}
-	return NewHandler(serviceStub, refreshCookie, func(next http.Handler) http.Handler { return next })
+	return NewHandler(
+		serviceStub,
+		refreshCookie,
+		func(next http.Handler) http.Handler { return next },
+		limiter,
+	)
 }
 
 func serveHandler(handler http.HandlerFunc, request *http.Request) *httptest.ResponseRecorder {

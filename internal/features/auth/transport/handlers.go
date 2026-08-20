@@ -31,6 +31,15 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+type forgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+type resetPasswordRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"new_password"`
+}
+
 type userResponse struct {
 	User model.User `json:"user"`
 }
@@ -55,6 +64,11 @@ func (h *Handler) Register(rw http.ResponseWriter, httpRequest *http.Request) {
 	if !decodeRequest(rw, httpRequest, &body) {
 		return
 	}
+	if !h.allowAuthAttempt(
+		rw, httpRequest, "register", body.Email, registerIPRule, registerAccountRule,
+	) {
+		return
+	}
 
 	result, err := h.service.Register(httpRequest.Context(), service.RegisterCommand{
 		Email:       body.Email,
@@ -77,6 +91,11 @@ func (h *Handler) VerifyEmail(rw http.ResponseWriter, httpRequest *http.Request)
 	if !decodeRequest(rw, httpRequest, &body) {
 		return
 	}
+	if !h.allowAuthAttempt(
+		rw, httpRequest, "verify", "", verifyIPRule, noAccountRule,
+	) {
+		return
+	}
 
 	user, err := h.service.VerifyEmail(httpRequest.Context(), body.Token)
 	if err != nil {
@@ -93,6 +112,11 @@ func (h *Handler) VerifyEmail(rw http.ResponseWriter, httpRequest *http.Request)
 func (h *Handler) Login(rw http.ResponseWriter, httpRequest *http.Request) {
 	var body loginRequest
 	if !decodeRequest(rw, httpRequest, &body) {
+		return
+	}
+	if !h.allowAuthAttempt(
+		rw, httpRequest, "login", body.Email, loginIPRule, loginAccountRule,
+	) {
 		return
 	}
 
@@ -112,6 +136,11 @@ func (h *Handler) Login(rw http.ResponseWriter, httpRequest *http.Request) {
 }
 
 func (h *Handler) Refresh(rw http.ResponseWriter, httpRequest *http.Request) {
+	if !h.allowAuthAttempt(
+		rw, httpRequest, "refresh", "", refreshIPRule, noAccountRule,
+	) {
+		return
+	}
 	refreshToken, ok := h.refreshCookie.Read(httpRequest)
 	if !ok {
 		writeError(rw, httpRequest, apperrors.ErrUnauthorized, "Authentication is required")
@@ -165,6 +194,47 @@ func (h *Handler) LogoutAll(rw http.ResponseWriter, httpRequest *http.Request) {
 		logoutAllResponse{RevokedSessionCount: revokedCount},
 		http.StatusOK,
 	)
+}
+
+func (h *Handler) ForgotPassword(rw http.ResponseWriter, httpRequest *http.Request) {
+	var body forgotPasswordRequest
+	if !decodeRequest(rw, httpRequest, &body) {
+		return
+	}
+	if !h.allowAuthAttempt(
+		rw, httpRequest, "forgot", body.Email, forgotIPRule, forgotAccountRule,
+	) {
+		return
+	}
+
+	if err := h.service.ForgotPassword(httpRequest.Context(), body.Email); err != nil {
+		writeError(rw, httpRequest, err, "Password recovery request failed")
+		return
+	}
+	// The same response is returned regardless of whether the account exists.
+	rw.WriteHeader(http.StatusAccepted)
+}
+
+func (h *Handler) ResetPassword(rw http.ResponseWriter, httpRequest *http.Request) {
+	var body resetPasswordRequest
+	if !decodeRequest(rw, httpRequest, &body) {
+		return
+	}
+	if !h.allowAuthAttempt(
+		rw, httpRequest, "reset", "", resetIPRule, noAccountRule,
+	) {
+		return
+	}
+
+	if err := h.service.ResetPassword(httpRequest.Context(), service.ResetPasswordCommand{
+		Token:       body.Token,
+		NewPassword: body.NewPassword,
+	}); err != nil {
+		writeError(rw, httpRequest, err, "Password reset failed")
+		return
+	}
+	h.refreshCookie.Clear(rw)
+	rw.WriteHeader(http.StatusNoContent)
 }
 
 func decodeRequest(

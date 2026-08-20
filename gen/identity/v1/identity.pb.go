@@ -1176,6 +1176,270 @@ func (*RevokeSessionResponse) Descriptor() ([]byte, []int) {
 	return file_identity_v1_identity_proto_rawDescGZIP(), []int{20}
 }
 
+type ChangePasswordRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	UserId          string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	CurrentPassword string                 `protobuf:"bytes,2,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
+	NewPassword     string                 `protobuf:"bytes,3,opt,name=new_password,json=newPassword,proto3" json:"new_password,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ChangePasswordRequest) Reset() {
+	*x = ChangePasswordRequest{}
+	mi := &file_identity_v1_identity_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangePasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangePasswordRequest) ProtoMessage() {}
+
+func (x *ChangePasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangePasswordRequest.ProtoReflect.Descriptor instead.
+func (*ChangePasswordRequest) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ChangePasswordRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *ChangePasswordRequest) GetCurrentPassword() string {
+	if x != nil {
+		return x.CurrentPassword
+	}
+	return ""
+}
+
+func (x *ChangePasswordRequest) GetNewPassword() string {
+	if x != nil {
+		return x.NewPassword
+	}
+	return ""
+}
+
+type ChangePasswordResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangePasswordResponse) Reset() {
+	*x = ChangePasswordResponse{}
+	mi := &file_identity_v1_identity_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangePasswordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangePasswordResponse) ProtoMessage() {}
+
+func (x *ChangePasswordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangePasswordResponse.ProtoReflect.Descriptor instead.
+func (*ChangePasswordResponse) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{22}
+}
+
+type ForgotPasswordRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForgotPasswordRequest) Reset() {
+	*x = ForgotPasswordRequest{}
+	mi := &file_identity_v1_identity_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForgotPasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForgotPasswordRequest) ProtoMessage() {}
+
+func (x *ForgotPasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForgotPasswordRequest.ProtoReflect.Descriptor instead.
+func (*ForgotPasswordRequest) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ForgotPasswordRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+type ForgotPasswordResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForgotPasswordResponse) Reset() {
+	*x = ForgotPasswordResponse{}
+	mi := &file_identity_v1_identity_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForgotPasswordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForgotPasswordResponse) ProtoMessage() {}
+
+func (x *ForgotPasswordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForgotPasswordResponse.ProtoReflect.Descriptor instead.
+func (*ForgotPasswordResponse) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{24}
+}
+
+type ResetPasswordRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	NewPassword   string                 `protobuf:"bytes,2,opt,name=new_password,json=newPassword,proto3" json:"new_password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetPasswordRequest) Reset() {
+	*x = ResetPasswordRequest{}
+	mi := &file_identity_v1_identity_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetPasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetPasswordRequest) ProtoMessage() {}
+
+func (x *ResetPasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetPasswordRequest.ProtoReflect.Descriptor instead.
+func (*ResetPasswordRequest) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ResetPasswordRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ResetPasswordRequest) GetNewPassword() string {
+	if x != nil {
+		return x.NewPassword
+	}
+	return ""
+}
+
+type ResetPasswordResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetPasswordResponse) Reset() {
+	*x = ResetPasswordResponse{}
+	mi := &file_identity_v1_identity_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetPasswordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetPasswordResponse) ProtoMessage() {}
+
+func (x *ResetPasswordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_identity_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetPasswordResponse.ProtoReflect.Descriptor instead.
+func (*ResetPasswordResponse) Descriptor() ([]byte, []int) {
+	return file_identity_v1_identity_proto_rawDescGZIP(), []int{26}
+}
+
 var File_identity_v1_identity_proto protoreflect.FileDescriptor
 
 const file_identity_v1_identity_proto_rawDesc = "" +
@@ -1251,14 +1515,26 @@ const file_identity_v1_identity_proto_rawDesc = "" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\"\x17\n" +
-	"\x15RevokeSessionResponse*\x8d\x01\n" +
+	"\x15RevokeSessionResponse\"~\n" +
+	"\x15ChangePasswordRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12)\n" +
+	"\x10current_password\x18\x02 \x01(\tR\x0fcurrentPassword\x12!\n" +
+	"\fnew_password\x18\x03 \x01(\tR\vnewPassword\"\x18\n" +
+	"\x16ChangePasswordResponse\"-\n" +
+	"\x15ForgotPasswordRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\"\x18\n" +
+	"\x16ForgotPasswordResponse\"O\n" +
+	"\x14ResetPasswordRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12!\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"\x17\n" +
+	"\x15ResetPasswordResponse*\x8d\x01\n" +
 	"\n" +
 	"UserStatus\x12\x1b\n" +
 	"\x17USER_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13USER_STATUS_PENDING\x10\x01\x12\x16\n" +
 	"\x12USER_STATUS_ACTIVE\x10\x02\x12\x17\n" +
 	"\x13USER_STATUS_BLOCKED\x10\x03\x12\x18\n" +
-	"\x14USER_STATUS_DELETING\x10\x042\xba\x06\n" +
+	"\x14USER_STATUS_DELETING\x10\x042\xc8\b\n" +
 	"\x0fIdentityService\x12G\n" +
 	"\bRegister\x12\x1c.identity.v1.RegisterRequest\x1a\x1d.identity.v1.RegisterResponse\x12P\n" +
 	"\vVerifyEmail\x12\x1f.identity.v1.VerifyEmailRequest\x1a .identity.v1.VerifyEmailResponse\x12@\n" +
@@ -1269,7 +1545,10 @@ const file_identity_v1_identity_proto_rawDesc = "" +
 	"\x17GetAccessTokenPublicKey\x12+.identity.v1.GetAccessTokenPublicKeyRequest\x1a,.identity.v1.GetAccessTokenPublicKeyResponse\x12D\n" +
 	"\aGetUser\x12\x1b.identity.v1.GetUserRequest\x1a\x1c.identity.v1.GetUserResponse\x12S\n" +
 	"\fListSessions\x12 .identity.v1.ListSessionsRequest\x1a!.identity.v1.ListSessionsResponse\x12V\n" +
-	"\rRevokeSession\x12!.identity.v1.RevokeSessionRequest\x1a\".identity.v1.RevokeSessionResponseB>Z<github.com/ZheglY/family_tree_app/gen/identity/v1;identityv1b\x06proto3"
+	"\rRevokeSession\x12!.identity.v1.RevokeSessionRequest\x1a\".identity.v1.RevokeSessionResponse\x12Y\n" +
+	"\x0eChangePassword\x12\".identity.v1.ChangePasswordRequest\x1a#.identity.v1.ChangePasswordResponse\x12Y\n" +
+	"\x0eForgotPassword\x12\".identity.v1.ForgotPasswordRequest\x1a#.identity.v1.ForgotPasswordResponse\x12V\n" +
+	"\rResetPassword\x12!.identity.v1.ResetPasswordRequest\x1a\".identity.v1.ResetPasswordResponseB>Z<github.com/ZheglY/family_tree_app/gen/identity/v1;identityv1b\x06proto3"
 
 var (
 	file_identity_v1_identity_proto_rawDescOnce sync.Once
@@ -1284,7 +1563,7 @@ func file_identity_v1_identity_proto_rawDescGZIP() []byte {
 }
 
 var file_identity_v1_identity_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_identity_v1_identity_proto_goTypes = []any{
 	(UserStatus)(0),                         // 0: identity.v1.UserStatus
 	(*User)(nil),                            // 1: identity.v1.User
@@ -1308,6 +1587,12 @@ var file_identity_v1_identity_proto_goTypes = []any{
 	(*ListSessionsResponse)(nil),            // 19: identity.v1.ListSessionsResponse
 	(*RevokeSessionRequest)(nil),            // 20: identity.v1.RevokeSessionRequest
 	(*RevokeSessionResponse)(nil),           // 21: identity.v1.RevokeSessionResponse
+	(*ChangePasswordRequest)(nil),           // 22: identity.v1.ChangePasswordRequest
+	(*ChangePasswordResponse)(nil),          // 23: identity.v1.ChangePasswordResponse
+	(*ForgotPasswordRequest)(nil),           // 24: identity.v1.ForgotPasswordRequest
+	(*ForgotPasswordResponse)(nil),          // 25: identity.v1.ForgotPasswordResponse
+	(*ResetPasswordRequest)(nil),            // 26: identity.v1.ResetPasswordRequest
+	(*ResetPasswordResponse)(nil),           // 27: identity.v1.ResetPasswordResponse
 }
 var file_identity_v1_identity_proto_depIdxs = []int32{
 	0,  // 0: identity.v1.User.status:type_name -> identity.v1.UserStatus
@@ -1326,18 +1611,24 @@ var file_identity_v1_identity_proto_depIdxs = []int32{
 	15, // 13: identity.v1.IdentityService.GetUser:input_type -> identity.v1.GetUserRequest
 	17, // 14: identity.v1.IdentityService.ListSessions:input_type -> identity.v1.ListSessionsRequest
 	20, // 15: identity.v1.IdentityService.RevokeSession:input_type -> identity.v1.RevokeSessionRequest
-	3,  // 16: identity.v1.IdentityService.Register:output_type -> identity.v1.RegisterResponse
-	5,  // 17: identity.v1.IdentityService.VerifyEmail:output_type -> identity.v1.VerifyEmailResponse
-	8,  // 18: identity.v1.IdentityService.Login:output_type -> identity.v1.SessionResponse
-	8,  // 19: identity.v1.IdentityService.RefreshSession:output_type -> identity.v1.SessionResponse
-	10, // 20: identity.v1.IdentityService.Logout:output_type -> identity.v1.LogoutResponse
-	12, // 21: identity.v1.IdentityService.LogoutAll:output_type -> identity.v1.LogoutAllResponse
-	14, // 22: identity.v1.IdentityService.GetAccessTokenPublicKey:output_type -> identity.v1.GetAccessTokenPublicKeyResponse
-	16, // 23: identity.v1.IdentityService.GetUser:output_type -> identity.v1.GetUserResponse
-	19, // 24: identity.v1.IdentityService.ListSessions:output_type -> identity.v1.ListSessionsResponse
-	21, // 25: identity.v1.IdentityService.RevokeSession:output_type -> identity.v1.RevokeSessionResponse
-	16, // [16:26] is the sub-list for method output_type
-	6,  // [6:16] is the sub-list for method input_type
+	22, // 16: identity.v1.IdentityService.ChangePassword:input_type -> identity.v1.ChangePasswordRequest
+	24, // 17: identity.v1.IdentityService.ForgotPassword:input_type -> identity.v1.ForgotPasswordRequest
+	26, // 18: identity.v1.IdentityService.ResetPassword:input_type -> identity.v1.ResetPasswordRequest
+	3,  // 19: identity.v1.IdentityService.Register:output_type -> identity.v1.RegisterResponse
+	5,  // 20: identity.v1.IdentityService.VerifyEmail:output_type -> identity.v1.VerifyEmailResponse
+	8,  // 21: identity.v1.IdentityService.Login:output_type -> identity.v1.SessionResponse
+	8,  // 22: identity.v1.IdentityService.RefreshSession:output_type -> identity.v1.SessionResponse
+	10, // 23: identity.v1.IdentityService.Logout:output_type -> identity.v1.LogoutResponse
+	12, // 24: identity.v1.IdentityService.LogoutAll:output_type -> identity.v1.LogoutAllResponse
+	14, // 25: identity.v1.IdentityService.GetAccessTokenPublicKey:output_type -> identity.v1.GetAccessTokenPublicKeyResponse
+	16, // 26: identity.v1.IdentityService.GetUser:output_type -> identity.v1.GetUserResponse
+	19, // 27: identity.v1.IdentityService.ListSessions:output_type -> identity.v1.ListSessionsResponse
+	21, // 28: identity.v1.IdentityService.RevokeSession:output_type -> identity.v1.RevokeSessionResponse
+	23, // 29: identity.v1.IdentityService.ChangePassword:output_type -> identity.v1.ChangePasswordResponse
+	25, // 30: identity.v1.IdentityService.ForgotPassword:output_type -> identity.v1.ForgotPasswordResponse
+	27, // 31: identity.v1.IdentityService.ResetPassword:output_type -> identity.v1.ResetPasswordResponse
+	19, // [19:32] is the sub-list for method output_type
+	6,  // [6:19] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -1354,7 +1645,7 @@ func file_identity_v1_identity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_identity_v1_identity_proto_rawDesc), len(file_identity_v1_identity_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   21,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

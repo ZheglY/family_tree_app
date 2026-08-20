@@ -13,14 +13,22 @@ type HealthDTOResponse struct {
 }
 
 // Проверка работоспособности приложения
-func (h *HealthHadler) GetHealth(rw http.ResponseWriter, r *http.Request) {
+func (h *HealthHandler) Live(rw http.ResponseWriter, r *http.Request) {
+	h.writeHealth(rw, r, h.healthService.Live(r.Context()))
+}
+
+func (h *HealthHandler) Ready(rw http.ResponseWriter, r *http.Request) {
+	h.writeHealth(rw, r, h.healthService.Ready(r.Context()))
+}
+
+func (h *HealthHandler) writeHealth(rw http.ResponseWriter, r *http.Request, healthErr error) {
 	ctx := r.Context()
 	log := logger.FromContext(ctx)
 	responseHandler := response.NewHTTPResponseHandler(log, rw)
 
-	if err := h.healthService.GetHealth(ctx); err != nil {
+	if healthErr != nil {
 		responseHandler.ErrorResponse(
-			err,
+			healthErr,
 			"failed to get app health info",
 		)
 		return
