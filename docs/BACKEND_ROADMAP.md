@@ -716,6 +716,8 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 ### Этап 8. Media и S3
 
+Статус: завершён 21 августа 2026 года.
+
 Сначала сделать адаптер хранилища и интеграционные тесты против S3-compatible development storage либо отдельного тестового bucket. Затем upload intent, complete, привязки и удаление.
 
 Не пропускать промежуточные статусы: БД и S3 не поддерживают общую ACID-транзакцию, поэтому процесс должен быть восстанавливаемым и идемпотентным.
@@ -840,7 +842,7 @@ JSON schema должна иметь собственную версию. Имп�
 
 ## 14. Текущий статус реализации
 
-Статус на 20 августа 2026 года:
+Статус на 21 августа 2026 года:
 
 - Этап 0 завершён: HTTP-фундамент стабилизирован и покрыт unit-тестами;
 - в Identity Service реализованы PostgreSQL, миграции, регистрация и подтверждение email;
@@ -856,7 +858,7 @@ Family API ограничивает публичные auth-попытки по 
 
 Этап 4 завершён: Family API подключён к отдельной PostgreSQL, получил встроенные миграции, `FamilyTree`, `TreeMember`, optimistic version, мягкое удаление/восстановление и аудит жизненного цикла. Все запросы деревьев ограничены активным membership; интеграционный PostgreSQL-тест доказывает, что пользователь не может прочитать, изменить или удалить чужое дерево даже при знании UUID. Добавлены отдельные liveness и readiness проверки.
 
-До полного production-hardening Этапа 3 остаются production mailer и аутентифицированный gRPC transport. S3 ещё не подключён и будет добавлен вместе с медиа-срезом; Family API не использует базу Identity Service.
+До полного production-hardening Этапа 3 остаются production mailer и аутентифицированный gRPC transport. Family API не использует базу Identity Service.
 
 Этап 5 завершён: добавлены `Person` и обязательное preferred `PersonName`, транзакционный CRUD агрегата, cursor pagination и поиск по имени, optimistic version, мягкое удаление/восстановление и audit log. Составной внешний ключ защищает принадлежность имени дереву; PostgreSQL integration-тесты покрывают outsider/viewer роли и запрещают cross-tree запись.
 
@@ -864,4 +866,6 @@ Family API ограничивает публичные auth-попытки по 
 
 Этап 7 завершён: добавлены `FamilyUnion` и `UnionMember`, транзакционное создание союза с первыми участниками, optimistic version, управление составом, мягкое удаление с аудитом и tenant-scoped права. `/graph` по `include_partners=true` включает активные союзы и партнёров одним переходом; cross-tree участники блокируются составными внешними ключами и repository-проверками.
 
-Следующий малый вертикальный срез: Этап 8 — `MediaAsset`, адаптер private Yandex Object Storage, восстанавливаемый upload intent/complete и привязка фото или документа к персоне. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
+Этап 8 завершён: добавлены `MediaAsset` и `PersonMedia`, private S3 adapter для Yandex Object Storage и MinIO, presigned PUT/GET, идемпотентный upload intent, проверяемый через HEAD complete, gallery CRUD, привязки к персоне и выбор основной фотографии. PostgreSQL хранит только метаданные и случайный object key; удаление мягкое, очищает primary media и оставляет физическую очистку восстанавливаемому worker-у.
+
+Следующий малый вертикальный срез: Этап 9 — PostgreSQL-backed job queue и worker для проверки фактического SHA-256/magic bytes, обработки изображений, очистки pending/orphaned/deleted объектов и подготовки экспортов. Production mailer и service-to-service аутентификацию завершить до публичного релиза.

@@ -37,27 +37,27 @@ func TestRunnerRollsLatestMigrationDownAndBackUp(t *testing.T) {
 	if err := runner.Down(ctx, 1); err != nil {
 		t.Fatalf("Down() error = %v", err)
 	}
-	if version, err := runner.CurrentVersion(ctx); err != nil || version != 3 {
+	if version, err := runner.CurrentVersion(ctx); err != nil || version != 4 {
 		t.Fatalf("version after down = %d, error = %v", version, err)
 	}
-	var unionsMissing, relationsPresent bool
+	var mediaMissing, unionsPresent bool
 	if err := database.Pool.QueryRow(ctx, `
-		SELECT to_regclass('family_unions') IS NULL,
-		       to_regclass('parent_child_relations') IS NOT NULL
-	`).Scan(&unionsMissing, &relationsPresent); err != nil {
+		SELECT to_regclass('media_assets') IS NULL,
+		       to_regclass('family_unions') IS NOT NULL
+	`).Scan(&mediaMissing, &unionsPresent); err != nil {
 		t.Fatal(err)
 	}
-	if !unionsMissing || !relationsPresent {
+	if !mediaMissing || !unionsPresent {
 		t.Fatalf(
-			"schema after down: unions missing = %t, relations present = %t",
-			unionsMissing,
-			relationsPresent,
+			"schema after down: media missing = %t, unions present = %t",
+			mediaMissing,
+			unionsPresent,
 		)
 	}
 	if err := runner.Up(ctx); err != nil {
 		t.Fatalf("second Up() error = %v", err)
 	}
-	if version, err := runner.CurrentVersion(ctx); err != nil || version != 4 {
+	if version, err := runner.CurrentVersion(ctx); err != nil || version != 5 {
 		t.Fatalf("final version = %d, error = %v", version, err)
 	}
 }

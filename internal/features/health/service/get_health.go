@@ -13,7 +13,7 @@ func (s *HealthService) Live(ctx context.Context) error {
 
 func (s *HealthService) Ready(ctx context.Context) error {
 	if err := s.healthRepository.GetHealth(ctx); err != nil {
-		return fmt.Errorf("%w: PostgreSQL is unavailable: %v", apperrors.ErrServiceUnavailable, err)
+		return fmt.Errorf("%w: a required dependency is unavailable: %v", apperrors.ErrServiceUnavailable, err)
 	}
 	return nil
 }

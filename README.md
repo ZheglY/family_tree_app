@@ -2,12 +2,12 @@
 
 Backend многопользовательского сервиса семейных деревьев. Family API построен как модульный монолит на Go, использует отдельный gRPC Identity Service и собственную PostgreSQL для семейного домена.
 
-Канонические документы: [концепция](docs/PROJECT_CONCEPT.md), [backend roadmap](docs/BACKEND_ROADMAP.md), [Trees HTTP API](docs/TREES_HTTP_API.md), [Persons HTTP API](docs/PERSONS_HTTP_API.md), [Relationships and graph API](docs/RELATIONSHIPS_HTTP_API.md), [Family unions API](docs/UNIONS_HTTP_API.md).
+Канонические документы: [концепция](docs/PROJECT_CONCEPT.md), [backend roadmap](docs/BACKEND_ROADMAP.md), [Trees HTTP API](docs/TREES_HTTP_API.md), [Persons HTTP API](docs/PERSONS_HTTP_API.md), [Relationships and graph API](docs/RELATIONSHIPS_HTTP_API.md), [Family unions API](docs/UNIONS_HTTP_API.md), [Media and private S3 API](docs/MEDIA_HTTP_API.md).
 
 ## Локальный запуск
 
 ```powershell
-docker compose up -d --wait family-postgres auth-redis
+docker compose up -d --wait family-postgres auth-redis media-s3
 go run ./cmd/migrate up
 $env:HTTP_ADDR=":8080"
 $env:LOGGER_LEVEL="DEBUG"
@@ -20,7 +20,7 @@ Identity Service должен быть запущен на адресе из `ID
 Проверки состояния:
 
 - `GET /health/live` — процесс принимает запросы;
-- `GET /health/ready` — обязательная PostgreSQL доступна.
+- `GET /health/ready` — обязательные PostgreSQL и private S3 bucket доступны.
 
 ## Миграции
 
@@ -36,6 +36,7 @@ Unit-тесты не требуют внешних сервисов. PostgreSQL 
 
 ```powershell
 $env:FAMILY_TEST_DATABASE_URL="postgres://family_tree:family_tree@localhost:5434/family_tree_test?sslmode=disable"
+$env:S3_TEST_ENDPOINT="http://localhost:9000"
 go test ./...
 go vet ./...
 ```

@@ -5,8 +5,13 @@ import "context"
 func (r *HealthRepository) GetHealth(
 	ctx context.Context,
 ) error {
-	if r.ping == nil {
-		return nil
+	for _, check := range r.checks {
+		if check == nil {
+			continue
+		}
+		if err := check(ctx); err != nil {
+			return err
+		}
 	}
-	return r.ping(ctx)
+	return nil
 }

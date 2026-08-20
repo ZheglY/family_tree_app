@@ -6,6 +6,74 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Invoke-PresignedUpload {
+    param(
+        [Parameter(Mandatory = $true)]$Upload,
+        [Parameter(Mandatory = $true)][byte[]]$Bytes
+    )
+
+    $client = [System.Net.Http.HttpClient]::new()
+    $message = $null
+    $content = $null
+    $response = $null
+    try {
+        $message = [System.Net.Http.HttpRequestMessage]::new(
+            [System.Net.Http.HttpMethod]::new([string]$Upload.method),
+            [string]$Upload.url
+        )
+        $content = [System.Net.Http.ByteArrayContent]::new($Bytes)
+        foreach ($property in $Upload.headers.PSObject.Properties) {
+            $values = @($property.Value | ForEach-Object { [string]$_ })
+            if (-not $message.Headers.TryAddWithoutValidation($property.Name, $values)) {
+                if (-not $content.Headers.TryAddWithoutValidation($property.Name, $values)) {
+                    throw "Could not add signed upload header $($property.Name)"
+                }
+            }
+        }
+        $message.Content = $content
+        $response = $client.SendAsync($message).GetAwaiter().GetResult()
+        if (-not $response.IsSuccessStatusCode) {
+            $errorBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            throw "Presigned upload returned $([int]$response.StatusCode): $errorBody"
+        }
+    } finally {
+        if ($null -ne $response) { $response.Dispose() }
+        if ($null -ne $message) { $message.Dispose() }
+        if ($null -ne $content) { $content.Dispose() }
+        $client.Dispose()
+    }
+}
+
+function Get-PresignedBytes {
+    param([Parameter(Mandatory = $true)]$Download)
+
+    $client = [System.Net.Http.HttpClient]::new()
+    $message = $null
+    $response = $null
+    try {
+        $message = [System.Net.Http.HttpRequestMessage]::new(
+            [System.Net.Http.HttpMethod]::new([string]$Download.method),
+            [string]$Download.url
+        )
+        foreach ($property in $Download.headers.PSObject.Properties) {
+            $values = @($property.Value | ForEach-Object { [string]$_ })
+            if (-not $message.Headers.TryAddWithoutValidation($property.Name, $values)) {
+                throw "Could not add signed download header $($property.Name)"
+            }
+        }
+        $response = $client.SendAsync($message).GetAwaiter().GetResult()
+        if (-not $response.IsSuccessStatusCode) {
+            $errorBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            throw "Presigned download returned $([int]$response.StatusCode): $errorBody"
+        }
+        return $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+    } finally {
+        if ($null -ne $response) { $response.Dispose() }
+        if ($null -ne $message) { $message.Dispose() }
+        $client.Dispose()
+    }
+}
+
 $familyRepository = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 if ([string]::IsNullOrWhiteSpace($IdentityRepository)) {
     $IdentityRepository = Join-Path (Split-Path $familyRepository -Parent) "family-tree-identity-microservice"
@@ -19,6 +87,16 @@ if (Get-NetTCPConnection -LocalPort 50051 -State Listen -ErrorAction SilentlyCon
 }
 if (Get-NetTCPConnection -LocalPort 18080 -State Listen -ErrorAction SilentlyContinue) {
     throw "Port 18080 is already in use"
+}
+try {
+    $storageHealth = Invoke-WebRequest `
+        -Method Get `
+        -Uri "http://127.0.0.1:9000/minio/health/live"
+    if ($storageHealth.StatusCode -ne 200) {
+        throw "unexpected status $($storageHealth.StatusCode)"
+    }
+} catch {
+    throw "Local S3-compatible storage is unavailable on port 9000"
 }
 
 $temporaryRoot = Join-Path (
@@ -532,6 +610,151 @@ try {
         throw "Family union delete returned $($deletedUnion.StatusCode), want 204"
     }
 
+    $mediaBytes = [Convert]::FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nCEAAAAASUVORK5CYII="
+    )
+    $mediaChecksumBytes = [System.Security.Cryptography.SHA256]::HashData($mediaBytes)
+    $mediaChecksum = -join ($mediaChecksumBytes | ForEach-Object { $_.ToString("x2") })
+    $mediaRequestID = [guid]::NewGuid().ToString()
+    $mediaIntentBody = @{
+        client_request_id = $mediaRequestID
+        kind = "photo"
+        original_filename = "e2e-portrait.png"
+        mime_type = "image/png"
+        size_bytes = $mediaBytes.Length
+        checksum_sha256 = $mediaChecksum
+    } | ConvertTo-Json -Compress
+    $mediaIntent = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/media/upload-intents" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $mediaIntentBody
+    if (-not $mediaIntent.created -or $mediaIntent.media.status -ne "pending" -or $null -eq $mediaIntent.upload) {
+        throw "Media upload intent did not return a pending asset and presigned upload"
+    }
+    $mediaID = $mediaIntent.media.id
+    Invoke-PresignedUpload -Upload $mediaIntent.upload -Bytes $mediaBytes
+    $completedMedia = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/media/$mediaID/complete" `
+        -Headers $authorization
+    if ($completedMedia.media.status -ne "uploaded" -or $completedMedia.media.version -ne 2 -or $null -eq $completedMedia.download) {
+        throw "Media completion did not verify the object and increment the version"
+    }
+    $downloadedMedia = Get-PresignedBytes -Download $completedMedia.download
+    if ([Convert]::ToBase64String($downloadedMedia) -ne [Convert]::ToBase64String($mediaBytes)) {
+        throw "Presigned media download did not return the uploaded bytes"
+    }
+    $retriedMediaIntent = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/media/upload-intents" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $mediaIntentBody
+    if ($retriedMediaIntent.created -or $retriedMediaIntent.media.id -ne $mediaID) {
+        throw "Media upload intent was not idempotent"
+    }
+    $mediaAttachmentBody = @{
+        media_id = $mediaID
+        role = "profile"
+        sort_order = 0
+    } | ConvertTo-Json -Compress
+    $mediaAttachment = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons/$personID/media" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $mediaAttachmentBody
+    if ($mediaAttachment.attachment.media_id -ne $mediaID) {
+        throw "Media was not attached to the person"
+    }
+    $primaryMediaBody = @{
+        media_id = $mediaID
+        person_version = 4
+    } | ConvertTo-Json -Compress
+    $primaryMedia = Invoke-RestMethod `
+        -Method Put `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons/$personID/primary-media" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $primaryMediaBody
+    if ($primaryMedia.person_version -ne 5) {
+        throw "Primary media selection did not increment the person version"
+    }
+    $mediaUpdateBody = @{
+        version = 2
+        caption = "E2E family portrait"
+        description = "Uploaded through a private presigned URL"
+    } | ConvertTo-Json -Compress
+    $updatedMedia = Invoke-RestMethod `
+        -Method Patch `
+        -Uri "$baseURL/api/v1/trees/$treeID/media/$mediaID" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $mediaUpdateBody
+    if ($updatedMedia.media.version -ne 3 -or $updatedMedia.media.caption -ne "E2E family portrait") {
+        throw "Media metadata update did not increment the version"
+    }
+    $mediaGallery = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/media?kind=photo&status=uploaded&limit=10" `
+        -Headers $authorization
+    if (($mediaGallery.items | Where-Object { $_.media.id -eq $mediaID }).Count -ne 1) {
+        throw "Media gallery did not return the uploaded asset"
+    }
+    $detachedMedia = Invoke-WebRequest `
+        -Method Delete `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons/$personID/media/$mediaID" `
+        -Headers $authorization
+    if ($detachedMedia.StatusCode -ne 204) {
+        throw "Media detach returned $($detachedMedia.StatusCode), want 204"
+    }
+    $reattachedMedia = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons/$personID/media" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $mediaAttachmentBody
+    $primaryMediaBody = @{
+        media_id = $mediaID
+        person_version = 6
+    } | ConvertTo-Json -Compress
+    $primaryMediaAgain = Invoke-RestMethod `
+        -Method Put `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons/$personID/primary-media" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $primaryMediaBody
+    if ($primaryMediaAgain.person_version -ne 7 -or $reattachedMedia.attachment.media_id -ne $mediaID) {
+        throw "Media could not be reattached and selected as primary"
+    }
+    $mediaDeleteBody = @{version = 3} | ConvertTo-Json -Compress
+    $deletedMedia = Invoke-WebRequest `
+        -Method Delete `
+        -Uri "$baseURL/api/v1/trees/$treeID/media/$mediaID" `
+        -ContentType "application/json" `
+        -Headers $authorization `
+        -Body $mediaDeleteBody
+    if ($deletedMedia.StatusCode -ne 204) {
+        throw "Media delete returned $($deletedMedia.StatusCode), want 204"
+    }
+    $hiddenMedia = Invoke-WebRequest `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/media/$mediaID" `
+        -Headers $authorization `
+        -SkipHttpErrorCheck
+    if ($hiddenMedia.StatusCode -ne 404) {
+        throw "Deleted media read returned $($hiddenMedia.StatusCode), want 404"
+    }
+    $personAfterMediaDelete = Invoke-RestMethod `
+        -Method Get `
+        -Uri "$baseURL/api/v1/trees/$treeID/persons/$personID" `
+        -Headers $authorization
+    if ($personAfterMediaDelete.person.version -ne 8 -or $null -ne $personAfterMediaDelete.person.primary_media_id) {
+        throw "Media deletion did not clear the primary photo and increment the person version"
+    }
+
     $secondLoginResponse = Invoke-WebRequest `
         -Method Post `
         -Uri "$baseURL/api/v1/auth/login" `
@@ -734,6 +957,10 @@ try {
         graph_union_count = $graph.unions.Count
         union_lifecycle_version = $unionWithTwoMembers.union.version
         deleted_union_status = $deletedUnion.StatusCode
+        media_upload_status = $completedMedia.media.status
+        media_lifecycle_version = $updatedMedia.media.version
+        deleted_media_status = $deletedMedia.StatusCode
+        person_version_after_media = $personAfterMediaDelete.person.version
         cyclic_relation_status = $cycleResponse.StatusCode
         deleted_relation_status = $deletedRelation.StatusCode
         sessions_before_revoke = $sessions.items.Count

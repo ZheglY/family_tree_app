@@ -9,6 +9,7 @@ import (
 
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
 	corepostgres "github.com/ZheglY/family_tree_app/internal/core/postgres"
+	s3storage "github.com/ZheglY/family_tree_app/internal/core/storage/s3"
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/server"
 	"github.com/ZheglY/family_tree_app/internal/features/auth/access"
@@ -19,6 +20,9 @@ import (
 	healthrepository "github.com/ZheglY/family_tree_app/internal/features/health/repository"
 	healthservice "github.com/ZheglY/family_tree_app/internal/features/health/service"
 	healthhttp "github.com/ZheglY/family_tree_app/internal/features/health/transport"
+	mediapostgres "github.com/ZheglY/family_tree_app/internal/features/media/repository/postgres"
+	mediaservice "github.com/ZheglY/family_tree_app/internal/features/media/service"
+	mediahttp "github.com/ZheglY/family_tree_app/internal/features/media/transport"
 	personpostgres "github.com/ZheglY/family_tree_app/internal/features/persons/repository/postgres"
 	personservice "github.com/ZheglY/family_tree_app/internal/features/persons/service"
 	personhttp "github.com/ZheglY/family_tree_app/internal/features/persons/transport"
@@ -66,9 +70,20 @@ func main() {
 		panic(err)
 	}
 	defer database.Close()
+	objectStorageConfig, err := s3storage.LoadConfig()
+	if err != nil {
+		panic(err)
+	}
+	objectStorage, err := s3storage.New(ctx, objectStorageConfig)
+	if err != nil {
+		panic(fmt.Errorf("initialize S3 object storage: %w", err))
+	}
+	if err := objectStorage.EnsureBucket(ctx); err != nil {
+		panic(fmt.Errorf("ensure private S3 bucket: %w", err))
+	}
 
 	log.Debug("initializing features", zap.String("feature", "health"))
-	healthRepository := healthrepository.NewHealthRepository(database.Ping)
+	healthRepository := healthrepository.NewHealthRepository(database.Ping, objectStorage.Ping)
 	healthService := healthservice.NewHealthService(healthRepository)
 	healthTransportHTTP := healthhttp.NewHealthHTTPHandler(healthService)
 
@@ -144,6 +159,16 @@ func main() {
 	unionService := unionservice.New(unionRepository, treeRepository)
 	unionTransportHTTP := unionhttp.NewHandler(unionService, requireAccess)
 
+	log.Debug("initializing features", zap.String("feature", "media"))
+	mediaRepository := mediapostgres.New(database.Native())
+	mediaService := mediaservice.New(
+		mediaRepository,
+		treeRepository,
+		objectStorage,
+		objectStorageConfig.MaxUploadBytes,
+	)
+	mediaTransportHTTP := mediahttp.NewHandler(mediaService, requireAccess)
+
 	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
 	httpConfig := server.NewConfigMust()
@@ -178,6 +203,7 @@ func main() {
 	apiV1Router.RegisterRoutes(personTransportHTTP.Routes()...)
 	apiV1Router.RegisterRoutes(relationTransportHTTP.Routes()...)
 	apiV1Router.RegisterRoutes(unionTransportHTTP.Routes()...)
+	apiV1Router.RegisterRoutes(mediaTransportHTTP.Routes()...)
 	httpServer.RegisterAPIRouters(apiV1Router)
 
 	if err := httpServer.Run(ctx); err != nil {
