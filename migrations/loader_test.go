@@ -8,8 +8,8 @@ func TestEmbeddedMigrationsAreComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(migrations) != 5 {
-		t.Fatalf("migration count = %d, want 5", len(migrations))
+	if len(migrations) != 9 {
+		t.Fatalf("migration count = %d, want 9", len(migrations))
 	}
 	migration := migrations[0]
 	if migration.Version != 1 || migration.Name != "create_tree_schema" ||
@@ -27,5 +27,17 @@ func TestEmbeddedMigrationsAreComplete(t *testing.T) {
 	}
 	if migrations[4].Version != 5 || migrations[4].Name != "create_media_schema" {
 		t.Fatalf("media migration = %#v", migrations[4])
+	}
+	if migrations[5].Version != 6 || migrations[5].Name != "create_job_queue" {
+		t.Fatalf("job queue migration = %#v", migrations[5])
+	}
+	if migrations[6].Version != 7 || migrations[6].Name != "create_export_jobs" {
+		t.Fatalf("export jobs migration = %#v", migrations[6])
+	}
+	if migrations[7].Version != 8 || migrations[7].Name != "add_zip_exports" {
+		t.Fatalf("ZIP export migration = %#v", migrations[7])
+	}
+	if migrations[8].Version != 9 || migrations[8].Name != "add_visual_exports" {
+		t.Fatalf("visual export migration = %#v", migrations[8])
 	}
 }

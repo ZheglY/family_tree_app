@@ -24,6 +24,7 @@ type Repository interface {
 	CreateIntentEditable(context.Context, uuid.UUID, domain.MediaAsset) (domain.MediaAsset, bool, error)
 	GetAccessible(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (domain.MediaAsset, error)
 	ListAccessible(context.Context, ListFilter) ([]domain.MediaAsset, error)
+	ListVariantsAccessible(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID) (map[uuid.UUID][]domain.MediaVariant, error)
 	CompleteUploadEditable(context.Context, uuid.UUID, domain.MediaAsset) error
 	UpdateEditable(context.Context, uuid.UUID, domain.MediaAsset) error
 	SoftDeleteEditable(context.Context, AuditMutation) error
@@ -161,6 +162,12 @@ type Result struct {
 	Asset      domain.MediaAsset
 	Membership treedomain.TreeMember
 	Download   *storage.PresignedRequest
+	Variants   []VariantResult
+}
+
+type VariantResult struct {
+	Variant  domain.MediaVariant
+	Download storage.PresignedRequest
 }
 
 type UploadIntentResult struct {
@@ -255,7 +262,8 @@ func (s *Service) CompleteUpload(
 		return Result{}, err
 	}
 	if asset.Status != domain.StatusPending {
-		if domain.CanDownload(asset.Status) {
+		if asset.Status == domain.StatusUploaded || asset.Status == domain.StatusProcessing ||
+			domain.CanDownload(asset.Status) {
 			return s.resultWithDownload(ctx, asset, treeAccess.Membership)
 		}
 		return Result{}, domain.ErrMediaStateConflict
@@ -317,8 +325,21 @@ func (s *Service) List(ctx context.Context, command ListCommand) (ListResult, er
 		assets = assets[:pageSize]
 	}
 	result := ListResult{Membership: treeAccess.Membership, Items: make([]Result, 0, len(assets))}
+	mediaIDs := make([]uuid.UUID, 0, len(assets))
 	for _, asset := range assets {
-		item, err := s.resultWithDownload(ctx, asset, treeAccess.Membership)
+		mediaIDs = append(mediaIDs, asset.ID)
+	}
+	variants, err := s.repository.ListVariantsAccessible(
+		ctx,
+		command.TreeID,
+		command.ActorUserID,
+		mediaIDs,
+	)
+	if err != nil {
+		return ListResult{}, err
+	}
+	for _, asset := range assets {
+		item, err := s.resultWithKnownVariants(ctx, asset, treeAccess.Membership, variants[asset.ID])
 		if err != nil {
 			return ListResult{}, err
 		}
@@ -453,6 +474,24 @@ func (s *Service) resultWithDownload(
 	asset domain.MediaAsset,
 	membership treedomain.TreeMember,
 ) (Result, error) {
+	variants, err := s.repository.ListVariantsAccessible(
+		ctx,
+		asset.TreeID,
+		membership.UserID,
+		[]uuid.UUID{asset.ID},
+	)
+	if err != nil {
+		return Result{}, err
+	}
+	return s.resultWithKnownVariants(ctx, asset, membership, variants[asset.ID])
+}
+
+func (s *Service) resultWithKnownVariants(
+	ctx context.Context,
+	asset domain.MediaAsset,
+	membership treedomain.TreeMember,
+	variants []domain.MediaVariant,
+) (Result, error) {
 	result := Result{Asset: asset, Membership: membership}
 	if !domain.CanDownload(asset.Status) {
 		return result, nil
@@ -462,6 +501,17 @@ func (s *Service) resultWithDownload(
 		return Result{}, err
 	}
 	result.Download = &download
+	result.Variants = make([]VariantResult, 0, len(variants))
+	for _, variant := range variants {
+		variantDownload, err := s.objectStore.PresignView(ctx, variant.ObjectKey)
+		if err != nil {
+			return Result{}, err
+		}
+		result.Variants = append(result.Variants, VariantResult{
+			Variant:  variant,
+			Download: variantDownload,
+		})
+	}
 	return result, nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -100,6 +101,57 @@ func TestAdapterPresignedUploadHeadAndDownload(t *testing.T) {
 	}
 	if downloadResponse.StatusCode != http.StatusOK || !bytes.Equal(downloaded, payload) {
 		t.Fatalf("download status = %d, payload = %q", downloadResponse.StatusCode, downloaded)
+	}
+	variantKey := objectKey + "/variant"
+	defer func() {
+		if err := adapter.DeleteObject(context.Background(), variantKey); err != nil {
+			t.Errorf("DeleteObject(variant) error = %v", err)
+		}
+	}()
+	variantBody := []byte("generated thumbnail")
+	variantDigest := sha256.Sum256(variantBody)
+	variantChecksum := fmt.Sprintf("%x", variantDigest)
+	putInfo, err := adapter.PutObject(ctx, storage.PutInput{
+		ObjectKey:      variantKey,
+		ContentType:    "image/jpeg",
+		ChecksumSHA256: variantChecksum,
+		Body:           variantBody,
+	})
+	if err != nil {
+		t.Fatalf("PutObject() error = %v", err)
+	}
+	if putInfo.SizeBytes != int64(len(variantBody)) || putInfo.ChecksumSHA256 != variantChecksum {
+		t.Fatalf("put object info = %#v", putInfo)
+	}
+	if _, err := adapter.PutObjectIfAbsent(ctx, storage.PutInput{
+		ObjectKey: variantKey, ContentType: "image/jpeg",
+		ChecksumSHA256: variantChecksum, Body: []byte("must not overwrite"),
+	}); !errors.Is(err, storage.ErrObjectAlreadyExists) {
+		t.Fatalf("PutObjectIfAbsent(existing) error = %v", err)
+	}
+	directBody, directInfo, err := adapter.DownloadObject(ctx, variantKey, int64(len(variantBody)))
+	if err != nil {
+		t.Fatalf("DownloadObject() error = %v", err)
+	}
+	if !bytes.Equal(directBody, variantBody) || directInfo.ChecksumSHA256 != variantChecksum {
+		t.Fatalf("direct download info = %#v, body = %q", directInfo, directBody)
+	}
+	view, err := adapter.PresignView(ctx, variantKey)
+	if err != nil {
+		t.Fatalf("PresignView() error = %v", err)
+	}
+	viewRequest, err := http.NewRequestWithContext(ctx, view.Method, view.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewRequest.Header = view.Headers.Clone()
+	viewResponse, err := http.DefaultClient.Do(viewRequest)
+	if err != nil {
+		t.Fatalf("inline view request: %v", err)
+	}
+	viewResponse.Body.Close()
+	if viewResponse.StatusCode != http.StatusOK || viewResponse.Header.Get("Content-Disposition") != "inline" {
+		t.Fatalf("inline view status = %d, disposition = %q", viewResponse.StatusCode, viewResponse.Header.Get("Content-Disposition"))
 	}
 }
 

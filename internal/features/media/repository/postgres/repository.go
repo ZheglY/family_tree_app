@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ZheglY/family_tree_app/internal/core/jobs"
+	jobpostgres "github.com/ZheglY/family_tree_app/internal/core/jobs/postgres"
 	"github.com/ZheglY/family_tree_app/internal/features/media/domain"
+	"github.com/ZheglY/family_tree_app/internal/features/media/mediajob"
 	"github.com/ZheglY/family_tree_app/internal/features/media/service"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -74,7 +77,8 @@ func (r *Repository) CreateIntentEditable(
 				id, tree_id, client_request_id, kind, status, object_key,
 				original_filename, mime_type, size_bytes, checksum_sha256,
 				etag, width, height, caption, description, uploaded_by,
-				uploaded_at, created_at, updated_at, deleted_at, version
+				uploaded_at, created_at, updated_at, deleted_at,
+				processing_error, processed_at, version
 			FROM media_assets
 			WHERE tree_id = $1 AND client_request_id = $2
 		`, asset.TreeID, asset.ClientRequestID))
@@ -103,7 +107,8 @@ func (r *Repository) GetAccessible(
 			a.id, a.tree_id, a.client_request_id, a.kind, a.status, a.object_key,
 			a.original_filename, a.mime_type, a.size_bytes, a.checksum_sha256,
 			a.etag, a.width, a.height, a.caption, a.description, a.uploaded_by,
-			a.uploaded_at, a.created_at, a.updated_at, a.deleted_at, a.version
+			a.uploaded_at, a.created_at, a.updated_at, a.deleted_at,
+			a.processing_error, a.processed_at, a.version
 		FROM media_assets a
 		JOIN tree_members m
 		  ON m.tree_id = a.tree_id
@@ -138,7 +143,8 @@ func (r *Repository) ListAccessible(
 			a.id, a.tree_id, a.client_request_id, a.kind, a.status, a.object_key,
 			a.original_filename, a.mime_type, a.size_bytes, a.checksum_sha256,
 			a.etag, a.width, a.height, a.caption, a.description, a.uploaded_by,
-			a.uploaded_at, a.created_at, a.updated_at, a.deleted_at, a.version
+			a.uploaded_at, a.created_at, a.updated_at, a.deleted_at,
+			a.processing_error, a.processed_at, a.version
 		FROM media_assets a
 		JOIN tree_members m
 		  ON m.tree_id = a.tree_id
@@ -223,6 +229,24 @@ func (r *Repository) CompleteUploadEditable(
 	}
 	if result.RowsAffected() != 1 {
 		return domain.ErrMediaVersionConflict
+	}
+	payload, err := mediajob.Encode(mediajob.ProcessPayload{
+		TreeID:  asset.TreeID,
+		MediaID: asset.ID,
+	})
+	if err != nil {
+		return err
+	}
+	if _, _, err := jobpostgres.EnqueueWith(ctx, tx, jobs.EnqueueRequest{
+		ID:               uuid.New(),
+		Kind:             mediajob.KindProcess,
+		DeduplicationKey: asset.ID.String(),
+		Payload:          payload,
+		MaxAttempts:      5,
+		AvailableAt:      asset.UpdatedAt,
+		CreatedAt:        asset.UpdatedAt,
+	}); err != nil {
+		return fmt.Errorf("enqueue media processing: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit media completion transaction: %w", err)
@@ -614,6 +638,8 @@ func scanAsset(row scanner) (domain.MediaAsset, error) {
 		&asset.CreatedAt,
 		&asset.UpdatedAt,
 		&asset.DeletedAt,
+		&asset.ProcessingError,
+		&asset.ProcessedAt,
 		&asset.Version,
 	)
 	return asset, err

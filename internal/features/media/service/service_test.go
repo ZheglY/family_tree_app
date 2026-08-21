@@ -31,6 +31,15 @@ func (r *mediaRepositoryStub) ListAccessible(context.Context, ListFilter) ([]dom
 	return nil, nil
 }
 
+func (r *mediaRepositoryStub) ListVariantsAccessible(
+	context.Context,
+	uuid.UUID,
+	uuid.UUID,
+	[]uuid.UUID,
+) (map[uuid.UUID][]domain.MediaVariant, error) {
+	return map[uuid.UUID][]domain.MediaVariant{}, nil
+}
+
 func (r *mediaRepositoryStub) CompleteUploadEditable(context.Context, uuid.UUID, domain.MediaAsset) error {
 	return nil
 }
@@ -75,6 +84,10 @@ func (mediaObjectStoreStub) HeadObject(context.Context, string) (storage.ObjectI
 }
 
 func (mediaObjectStoreStub) PresignDownload(context.Context, string, string) (storage.PresignedRequest, error) {
+	return storage.PresignedRequest{}, nil
+}
+
+func (mediaObjectStoreStub) PresignView(context.Context, string) (storage.PresignedRequest, error) {
 	return storage.PresignedRequest{}, nil
 }
 

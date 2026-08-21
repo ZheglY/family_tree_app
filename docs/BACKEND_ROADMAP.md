@@ -724,6 +724,8 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 ### Этап 9. Worker
 
+Статус: завершён 21 августа 2026 года.
+
 Для первой версии использовать PostgreSQL-backed job queue:
 
 - job claim через `FOR UPDATE SKIP LOCKED`;
@@ -737,6 +739,8 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 ### Этап 10. Export
 
+Статус: в процессе. Versioned JSON manifest, ZIP backup с файлами/checksums, проверяемый offline restore и визуальный PDF/PNG/SVG завершены 21 августа 2026 года. Backup и visual pipelines проверяются на чистой PostgreSQL schema и реальном S3-compatible MinIO; следующий формат — GEDCOM 7.
+
 Порядок форматов:
 
 1. JSON manifest без файлов;
@@ -745,7 +749,7 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 4. GEDCOM 7;
 5. GEDZIP.
 
-JSON schema должна иметь собственную версию. Импорт резервной копии не объявлять готовым, пока нет проверки восстановления на чистой БД.
+JSON schema должна иметь собственную версию. Технический offline restore резервной копии готов и проверен на чистой БД. Публичный пользовательский import не добавлять без отдельного mapping/conflict-preview контракта и tenant-scoped авторизации.
 
 ### Этап 11. Hardening и release
 
@@ -868,4 +872,8 @@ Family API ограничивает публичные auth-попытки по 
 
 Этап 8 завершён: добавлены `MediaAsset` и `PersonMedia`, private S3 adapter для Yandex Object Storage и MinIO, presigned PUT/GET, идемпотентный upload intent, проверяемый через HEAD complete, gallery CRUD, привязки к персоне и выбор основной фотографии. PostgreSQL хранит только метаданные и случайный object key; удаление мягкое, очищает primary media и оставляет физическую очистку восстанавливаемому worker-у.
 
-Следующий малый вертикальный срез: Этап 9 — PostgreSQL-backed job queue и worker для проверки фактического SHA-256/magic bytes, обработки изображений, очистки pending/orphaned/deleted объектов и подготовки экспортов. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
+Этап 9 завершён: отдельный `cmd/worker` использует PostgreSQL-backed очередь с `FOR UPDATE SKIP LOCKED`, lease/heartbeat, exponential retry, `dead` state и идемпотентными handlers. `media.process` проверяет фактический SHA-256, magic bytes и декодирование, создаёт thumbnail/preview и только затем открывает скачивание и привязки. `media.cleanup` безопасно резервирует просроченные pending и после retention удаляет originals/variants и metadata. Интеграционные тесты покрывают конкурирующий claim, потерю lease, retry/dead и реальный MinIO pipeline.
+
+Этап 10 в процессе: реализованы `json_backup`, `zip_backup` schema v1, offline restore и визуальные `pdf`/`png`/`svg`. Создание export и job атомарно, worker формирует repeatable-read snapshot, сохраняет checksum и приватный S3 object, а API предоставляет tenant-scoped историю и короткоживущую ссылку только requester/Owner. ZIP содержит manifest, checksums и проверенные оригиналы/варианты `uploaded`/`processing`/`ready` media без раскрытия S3 keys. Restore валидирует schema, canonical paths, checksum set и связи, сохраняет UUID, транзакционно восстанавливает граф и компенсирует S3 uploads при ошибке. Визуальные форматы используют общий детерминированный generations layout, выравнивают партнёров и исключают soft-deleted записи; PDF встраивает Unicode font. Clean PostgreSQL + real MinIO integration-тесты подтверждают restore и visual pipelines. Результат экспорта имеет TTL, ручное удаление и периодическую очистку; audit фиксирует создание, скачивание, удаление и восстановление.
+
+Следующий малый вертикальный срез: post-MVP GEDCOM 7, затем GEDZIP и Этап 11 hardening/release. Production mailer и service-to-service аутентификацию завершить до публичного релиза.

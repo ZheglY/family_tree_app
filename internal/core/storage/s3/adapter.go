@@ -1,9 +1,11 @@
 package s3storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"strings"
@@ -186,6 +188,30 @@ func (a *Adapter) PresignDownload(
 	}, nil
 }
 
+func (a *Adapter) PresignView(
+	ctx context.Context,
+	objectKey string,
+) (storage.PresignedRequest, error) {
+	request, err := a.presigner.PresignGetObject(
+		ctx,
+		&awss3.GetObjectInput{
+			Bucket:                     aws.String(a.bucket),
+			Key:                        aws.String(objectKey),
+			ResponseContentDisposition: aws.String("inline"),
+		},
+		func(options *awss3.PresignOptions) { options.Expires = a.downloadTTL },
+	)
+	if err != nil {
+		return storage.PresignedRequest{}, fmt.Errorf("presign S3 inline view: %w", err)
+	}
+	return storage.PresignedRequest{
+		URL:       request.URL,
+		Method:    request.Method,
+		Headers:   cloneClientHeaders(request.SignedHeader),
+		ExpiresAt: a.now().Add(a.downloadTTL),
+	}, nil
+}
+
 func (a *Adapter) DeleteObject(ctx context.Context, objectKey string) error {
 	ctx, cancel := context.WithTimeout(ctx, a.requestTimeout)
 	defer cancel()
@@ -196,6 +222,106 @@ func (a *Adapter) DeleteObject(ctx context.Context, objectKey string) error {
 		return fmt.Errorf("delete S3 object: %w", err)
 	}
 	return nil
+}
+
+func (a *Adapter) DownloadObject(
+	ctx context.Context,
+	objectKey string,
+	maxBytes int64,
+) ([]byte, storage.ObjectInfo, error) {
+	if maxBytes <= 0 {
+		return nil, storage.ObjectInfo{}, fmt.Errorf("download S3 object: invalid size limit")
+	}
+	ctx, cancel := context.WithTimeout(ctx, a.requestTimeout)
+	defer cancel()
+	result, err := a.client.GetObject(ctx, &awss3.GetObjectInput{
+		Bucket: aws.String(a.bucket),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		var apiError smithy.APIError
+		if errors.As(err, &apiError) &&
+			(apiError.ErrorCode() == "NotFound" || apiError.ErrorCode() == "NoSuchKey") {
+			return nil, storage.ObjectInfo{}, storage.ErrObjectNotFound
+		}
+		return nil, storage.ObjectInfo{}, fmt.Errorf("get S3 object: %w", err)
+	}
+	defer result.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(result.Body, maxBytes+1))
+	if err != nil {
+		return nil, storage.ObjectInfo{}, fmt.Errorf("read S3 object: %w", err)
+	}
+	if int64(len(body)) > maxBytes {
+		return nil, storage.ObjectInfo{}, fmt.Errorf("download S3 object: size limit exceeded")
+	}
+	return body, storage.ObjectInfo{
+		ContentType:    aws.ToString(result.ContentType),
+		SizeBytes:      int64(len(body)),
+		ChecksumSHA256: result.Metadata["sha256"],
+		ETag:           strings.Trim(aws.ToString(result.ETag), "\""),
+	}, nil
+}
+
+func (a *Adapter) PutObject(
+	ctx context.Context,
+	input storage.PutInput,
+) (storage.ObjectInfo, error) {
+	return a.putObject(ctx, input, false)
+}
+
+func (a *Adapter) PutObjectIfAbsent(
+	ctx context.Context,
+	input storage.PutInput,
+) (storage.ObjectInfo, error) {
+	return a.putObject(ctx, input, true)
+}
+
+func (a *Adapter) putObject(
+	ctx context.Context,
+	input storage.PutInput,
+	ifAbsent bool,
+) (storage.ObjectInfo, error) {
+	if strings.TrimSpace(input.ObjectKey) == "" || strings.TrimSpace(input.ContentType) == "" ||
+		len(input.Body) == 0 || strings.TrimSpace(input.ChecksumSHA256) == "" {
+		return storage.ObjectInfo{}, fmt.Errorf("put S3 object: invalid input")
+	}
+	ctx, cancel := context.WithTimeout(ctx, a.requestTimeout)
+	defer cancel()
+	parameters := &awss3.PutObjectInput{
+		Bucket:        aws.String(a.bucket),
+		Key:           aws.String(input.ObjectKey),
+		Body:          bytes.NewReader(input.Body),
+		ContentType:   aws.String(input.ContentType),
+		ContentLength: aws.Int64(int64(len(input.Body))),
+		Metadata: map[string]string{
+			"sha256": input.ChecksumSHA256,
+		},
+	}
+	if ifAbsent {
+		parameters.IfNoneMatch = aws.String("*")
+	}
+	if a.encryption != "" {
+		parameters.ServerSideEncryption = a.encryption
+	}
+	if a.kmsKeyID != "" {
+		parameters.SSEKMSKeyId = aws.String(a.kmsKeyID)
+	}
+	result, err := a.client.PutObject(ctx, parameters)
+	if err != nil {
+		var apiError smithy.APIError
+		if ifAbsent && errors.As(err, &apiError) &&
+			(apiError.ErrorCode() == "PreconditionFailed" ||
+				apiError.ErrorCode() == "ConditionalRequestConflict") {
+			return storage.ObjectInfo{}, fmt.Errorf("put S3 object: %w", storage.ErrObjectAlreadyExists)
+		}
+		return storage.ObjectInfo{}, fmt.Errorf("put S3 object: %w", err)
+	}
+	return storage.ObjectInfo{
+		ContentType:    input.ContentType,
+		SizeBytes:      int64(len(input.Body)),
+		ChecksumSHA256: input.ChecksumSHA256,
+		ETag:           strings.Trim(aws.ToString(result.ETag), "\""),
+	}, nil
 }
 
 func cloneClientHeaders(source http.Header) http.Header {

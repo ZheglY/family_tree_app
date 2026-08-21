@@ -67,7 +67,30 @@ type MediaAsset struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	DeletedAt        *time.Time
+	ProcessingError  string
+	ProcessedAt      *time.Time
 	Version          int
+}
+
+type MediaVariant struct {
+	ID             uuid.UUID
+	TreeID         uuid.UUID
+	MediaID        uuid.UUID
+	Kind           string
+	ObjectKey      string
+	MIMEType       string
+	SizeBytes      int64
+	ChecksumSHA256 string
+	Width          int
+	Height         int
+	CreatedAt      time.Time
+}
+
+type CleanupCandidate struct {
+	MediaID     uuid.UUID
+	Status      string
+	ObjectKey   string
+	VariantKeys []string
 }
 
 type PersonMedia struct {
@@ -253,11 +276,11 @@ func IsRole(value string) bool {
 }
 
 func CanAttach(status string) bool {
-	return status == StatusUploaded || status == StatusProcessing || status == StatusReady
+	return status == StatusReady
 }
 
 func CanDownload(status string) bool {
-	return CanAttach(status)
+	return status == StatusReady
 }
 
 func SameUploadRequest(asset MediaAsset, values CreateValues) bool {
