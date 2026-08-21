@@ -341,7 +341,7 @@ Refresh token хранится только в виде хеша. При обн�
 ### 3.17. ExportJob
 
 - `id`, `tree_id`, `requested_by`;
-- `format`: `json_backup`, `pdf`, `png`, `svg`, позднее `gedcom`, `gedzip`;
+- `format`: `json_backup`, `zip_backup`, `pdf`, `png`, `svg`, `gedcom`; позднее `gedzip`;
 - `parameters jsonb`;
 - `status`: `queued`, `running`, `completed`, `failed`, `expired`;
 - `progress`, `result_object_key`, `error_code`;
@@ -739,7 +739,7 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 ### Этап 10. Export
 
-Статус: в процессе. Versioned JSON manifest, ZIP backup с файлами/checksums, проверяемый offline restore и визуальный PDF/PNG/SVG завершены 21 августа 2026 года. Backup и visual pipelines проверяются на чистой PostgreSQL schema и реальном S3-compatible MinIO; следующий формат — GEDCOM 7.
+Статус: в процессе. Versioned JSON manifest, ZIP backup с файлами/checksums, проверяемый offline restore, визуальный PDF/PNG/SVG и GEDCOM 7 завершены 22 августа 2026 года. Backup, visual и GEDCOM pipelines проверяются на чистой PostgreSQL schema и реальном S3-compatible MinIO; из форматов остался GEDZIP.
 
 Порядок форматов:
 
@@ -874,6 +874,6 @@ Family API ограничивает публичные auth-попытки по 
 
 Этап 9 завершён: отдельный `cmd/worker` использует PostgreSQL-backed очередь с `FOR UPDATE SKIP LOCKED`, lease/heartbeat, exponential retry, `dead` state и идемпотентными handlers. `media.process` проверяет фактический SHA-256, magic bytes и декодирование, создаёт thumbnail/preview и только затем открывает скачивание и привязки. `media.cleanup` безопасно резервирует просроченные pending и после retention удаляет originals/variants и metadata. Интеграционные тесты покрывают конкурирующий claim, потерю lease, retry/dead и реальный MinIO pipeline.
 
-Этап 10 в процессе: реализованы `json_backup`, `zip_backup` schema v1, offline restore и визуальные `pdf`/`png`/`svg`. Создание export и job атомарно, worker формирует repeatable-read snapshot, сохраняет checksum и приватный S3 object, а API предоставляет tenant-scoped историю и короткоживущую ссылку только requester/Owner. ZIP содержит manifest, checksums и проверенные оригиналы/варианты `uploaded`/`processing`/`ready` media без раскрытия S3 keys. Restore валидирует schema, canonical paths, checksum set и связи, сохраняет UUID, транзакционно восстанавливает граф и компенсирует S3 uploads при ошибке. Визуальные форматы используют общий детерминированный generations layout, выравнивают партнёров и исключают soft-deleted записи; PDF встраивает Unicode font. Clean PostgreSQL + real MinIO integration-тесты подтверждают restore и visual pipelines. Результат экспорта имеет TTL, ручное удаление и периодическую очистку; audit фиксирует создание, скачивание, удаление и восстановление.
+Этап 10 в процессе: реализованы `json_backup`, `zip_backup` schema v1, offline restore, визуальные `pdf`/`png`/`svg` и `gedcom`. Создание export и job атомарно, worker формирует repeatable-read snapshot, сохраняет checksum и приватный S3 object, а API предоставляет tenant-scoped историю и короткоживущую ссылку только requester/Owner. ZIP содержит manifest, checksums и проверенные оригиналы/варианты `uploaded`/`processing`/`ready` media без раскрытия S3 keys. Restore валидирует schema, canonical paths, checksum set и связи, сохраняет UUID, транзакционно восстанавливает граф и компенсирует S3 uploads при ошибке. Визуальные форматы используют общий детерминированный generations layout, выравнивают партнёров и исключают soft-deleted записи; PDF встраивает Unicode font. GEDCOM 7 экспортирует активный граф со стабильными `INDI`/`FAM` identifiers, взаимными family pointers, типом родительства и безопасным многострочным UTF-8. Clean PostgreSQL + real MinIO integration-тесты подтверждают restore, visual и GEDCOM pipelines. Результат экспорта имеет TTL, ручное удаление и периодическую очистку; audit фиксирует создание, скачивание, удаление и восстановление.
 
-Следующий малый вертикальный срез: post-MVP GEDCOM 7, затем GEDZIP и Этап 11 hardening/release. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
+Следующий малый вертикальный срез: GEDZIP, затем Этап 11 hardening/release. Production mailer и service-to-service аутентификацию завершить до публичного релиза.

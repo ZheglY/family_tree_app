@@ -1,6 +1,6 @@
 # PostgreSQL-backed worker
 
-Статус: реализованный контракт Этапа 9, JSON/ZIP backup, проверяемый offline restore и визуальный PDF/PNG/SVG export Этапа 10. Worker запускается отдельным процессом `go run ./cmd/worker`, но использует те же PostgreSQL и приватный S3 bucket, что и Family API.
+Статус: реализованный контракт Этапа 9, JSON/ZIP backup, проверяемый offline restore, визуальный PDF/PNG/SVG и GEDCOM 7 export Этапа 10. Worker запускается отдельным процессом `go run ./cmd/worker`, но использует те же PostgreSQL и приватный S3 bucket, что и Family API.
 
 ## Гарантии очереди
 
@@ -57,6 +57,8 @@ Handler идемпотентно выполняет:
 `zip_backup` дополняет тот же manifest доступными оригиналами и вариантами активных media в состояниях `uploaded`, `processing` и `ready`. Это позволяет не потерять файл, загруженный непосредственно перед созданием backup: после restore состояния `uploaded` и `processing` нормализуются в `uploaded` и получают новый `media.process`. Архив содержит безопасные UUID-based пути, `manifest.json` и `checksums.sha256`; каждый скачанный из S3 объект повторно проверяется по размеру и SHA-256. Результат сохраняется как `backup-{sha256}.zip`. Текущая реализация собирает архив в памяти и поэтому отклоняет входной объём выше `EXPORT_MAX_ARCHIVE_BYTES`; streaming/multipart остаётся следующим инфраструктурным улучшением.
 
 `pdf`, `png` и `svg` используют один детерминированный layout активного графа: preferred names, parent-child relations и family unions. Партнёры выравниваются по поколению, а soft-deleted записи исключаются. PDF содержит embedded Unicode fonts, SVG не загружает внешние ресурсы, PNG кодируется worker-ом напрямую. Превышение `EXPORT_MAX_VISUAL_NODES`, `EXPORT_MAX_VISUAL_PIXELS` или общего byte limit завершает export с `visual_too_large` без бессмысленного retry.
+
+`gedcom` преобразует активный граф в детерминированный FamilySearch GEDCOM 7.0. Writer формирует UTF-8 BOM и CRLF, экранирует leading `@`, переносит многострочный текст через `CONT`, создаёт взаимные `FAM`/`INDI` pointers и сохраняет тип родительства через `PEDI`. Результат хранится как `tree-{sha256}.ged` с зарегистрированным MIME `text/vnd.familysearch.gedcom`; общий byte limit завершает слишком большой результат кодом `result_too_large` без retry.
 
 Повторная обработка безопасна. После исчерпания retry доменное задание становится `failed`; удалённое во время генерации задание не может снова стать `completed`, а поздно загруженный объект удаляется.
 

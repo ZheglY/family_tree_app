@@ -22,7 +22,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestVisualGeneratorStoresPDFInPostgresAndS3(t *testing.T) {
+func TestVisualAndGEDCOMGeneratorsStoreResultsInPostgresAndS3(t *testing.T) {
 	databaseURL := os.Getenv("FAMILY_TEST_DATABASE_URL")
 	endpoint := os.Getenv("S3_TEST_ENDPOINT")
 	if databaseURL == "" || endpoint == "" {
@@ -153,6 +153,58 @@ func TestVisualGeneratorStoresPDFInPostgresAndS3(t *testing.T) {
 	if !bytes.HasPrefix(body, []byte("%PDF-")) || int64(len(body)) != sizeBytes ||
 		hex.EncodeToString(digest[:]) != checksum || info.ChecksumSHA256 != checksum {
 		t.Fatal("stored PDF differs from completed export metadata")
+	}
+
+	gedcomExport, err := domain.New(uuid.New(), treeID, ownerID, domain.CreateValues{
+		ClientRequestID: uuid.New(), Format: domain.FormatGEDCOM,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gedcomExport, created, err = repository.CreateAccessible(ctx, gedcomExport, service.AuditContext{
+		AuditID: uuid.New(), RequestID: "gedcom-pipeline-test", IPAddress: "127.0.0.1",
+	})
+	if err != nil || !created {
+		t.Fatalf("create GEDCOM export = %#v, created = %t, error = %v", gedcomExport, created, err)
+	}
+	gedcomPayload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: treeID, ExportID: gedcomExport.ID})
+	if err := generator.Handle(ctx, jobs.Job{
+		Kind: exportjob.KindGenerate, Payload: gedcomPayload, Attempts: 1, MaxAttempts: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var gedcomStatus, gedcomKey, gedcomMIME, gedcomChecksum string
+	var gedcomSize int64
+	if err := database.Pool.QueryRow(ctx, `
+		SELECT status, result_object_key, result_mime_type, result_size_bytes,
+			result_checksum_sha256
+		FROM export_jobs WHERE tree_id = $1 AND id = $2
+	`, treeID, gedcomExport.ID).Scan(
+		&gedcomStatus, &gedcomKey, &gedcomMIME, &gedcomSize, &gedcomChecksum,
+	); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if gedcomKey != "" {
+			if err := objectStore.DeleteObject(context.Background(), gedcomKey); err != nil {
+				t.Errorf("delete GEDCOM export object: %v", err)
+			}
+		}
+	}()
+	gedcomBody, gedcomInfo, err := objectStore.DownloadObject(ctx, gedcomKey, 16*1024*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gedcomDigest := sha256.Sum256(gedcomBody)
+	if gedcomStatus != domain.StatusCompleted || gedcomMIME != "text/vnd.familysearch.gedcom" ||
+		!bytes.HasPrefix(gedcomBody, []byte{0xEF, 0xBB, 0xBF}) ||
+		!bytes.Contains(gedcomBody, []byte("2 VERS 7.0\r\n")) ||
+		!bytes.Contains(gedcomBody, []byte(" FAM\r\n")) ||
+		!bytes.HasSuffix(gedcomBody, []byte("0 TRLR\r\n")) ||
+		int64(len(gedcomBody)) != gedcomSize ||
+		hex.EncodeToString(gedcomDigest[:]) != gedcomChecksum ||
+		gedcomInfo.ChecksumSHA256 != gedcomChecksum {
+		t.Fatal("stored GEDCOM differs from completed export metadata")
 	}
 }
 

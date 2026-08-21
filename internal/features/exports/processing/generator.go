@@ -13,6 +13,7 @@ import (
 	"github.com/ZheglY/family_tree_app/internal/core/storage"
 	"github.com/ZheglY/family_tree_app/internal/features/exports/domain"
 	"github.com/ZheglY/family_tree_app/internal/features/exports/exportjob"
+	"github.com/ZheglY/family_tree_app/internal/features/exports/gedcom"
 	"github.com/ZheglY/family_tree_app/internal/features/exports/manifest"
 	"github.com/ZheglY/family_tree_app/internal/features/exports/visual"
 	"github.com/google/uuid"
@@ -105,6 +106,12 @@ func (generator *Generator) Handle(ctx context.Context, job jobs.Job) error {
 		if err == nil && int64(len(body)) > generator.maxArchiveBytes {
 			err = domain.ErrExportVisualTooLarge
 		}
+	case domain.FormatGEDCOM:
+		body, err = gedcom.Render(snapshot.Manifest)
+		mimeType = gedcom.MIMEType
+		if err == nil && int64(len(body)) > generator.maxArchiveBytes {
+			err = domain.ErrExportResultTooLarge
+		}
 	default:
 		err = domain.ErrInvalidExport
 	}
@@ -117,6 +124,12 @@ func (generator *Generator) Handle(ctx context.Context, job jobs.Job) error {
 		}
 		if errors.Is(err, domain.ErrExportVisualTooLarge) {
 			if markErr := generator.repository.MarkFailed(ctx, export, "visual_too_large", generator.now()); markErr != nil {
+				return errors.Join(err, markErr)
+			}
+			return nil
+		}
+		if errors.Is(err, domain.ErrExportResultTooLarge) {
+			if markErr := generator.repository.MarkFailed(ctx, export, "result_too_large", generator.now()); markErr != nil {
 				return errors.Join(err, markErr)
 			}
 			return nil
@@ -170,6 +183,8 @@ func ResultObjectKey(treeID uuid.UUID, exportID uuid.UUID, format string, checks
 		filename = fmt.Sprintf("backup-%s.zip", checksum)
 	case domain.FormatPDF, domain.FormatPNG, domain.FormatSVG:
 		filename = fmt.Sprintf("tree-%s.%s", checksum, format)
+	case domain.FormatGEDCOM:
+		filename = fmt.Sprintf("tree-%s.ged", checksum)
 	default:
 		filename = fmt.Sprintf("manifest-%s.json", checksum)
 	}

@@ -360,6 +360,52 @@ func TestGeneratorCreatesVisualFormats(t *testing.T) {
 	}
 }
 
+func TestGeneratorCreatesGEDCOM7(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.August, 22, 12, 0, 0, 0, time.UTC)
+	export, err := domain.New(uuid.New(), uuid.New(), uuid.New(), domain.CreateValues{
+		ClientRequestID: uuid.New(), Format: domain.FormatGEDCOM,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &processingRepositoryStub{export: export, snapshot: testVisualSnapshot(export, now)}
+	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
+	generator := NewGenerator(repository, objectStore, 24*time.Hour, 16*1024*1024, 20, 64*1024*1024)
+	generator.now = func() time.Time { return now }
+	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
+	if err := generator.Handle(context.Background(), jobs.Job{
+		Kind: exportjob.KindGenerate, Payload: payload, Attempts: 1, MaxAttempts: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stored, exists := objectStore.objects[repository.export.ResultObjectKey]
+	if !exists || !repository.completed || stored.ContentType != "text/vnd.familysearch.gedcom" ||
+		!strings.HasSuffix(stored.ObjectKey, ".ged") ||
+		!bytes.HasPrefix(stored.Body, []byte{0xEF, 0xBB, 0xBF}) ||
+		!bytes.Contains(stored.Body, []byte("2 VERS 7.0\r\n")) {
+		t.Fatalf("stored GEDCOM = %#v, export = %#v", stored, repository.export)
+	}
+}
+
+func TestGeneratorRejectsOversizedGEDCOM(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.August, 22, 12, 0, 0, 0, time.UTC)
+	export, _ := domain.New(uuid.New(), uuid.New(), uuid.New(), domain.CreateValues{
+		ClientRequestID: uuid.New(), Format: domain.FormatGEDCOM,
+	}, now)
+	repository := &processingRepositoryStub{export: export, snapshot: testVisualSnapshot(export, now)}
+	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
+	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
+	err := NewGenerator(repository, objectStore, time.Hour, 32, 20, 64*1024*1024).Handle(
+		context.Background(),
+		jobs.Job{Kind: exportjob.KindGenerate, Payload: payload, Attempts: 1, MaxAttempts: 5},
+	)
+	if err != nil || repository.failedCode != "result_too_large" || len(objectStore.objects) != 0 {
+		t.Fatalf("error = %v, failure code = %q, objects = %#v", err, repository.failedCode, objectStore.objects)
+	}
+}
+
 func TestGeneratorRejectsOversizedVisualTree(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)

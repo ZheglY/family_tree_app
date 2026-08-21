@@ -1,6 +1,6 @@
 # Export HTTP API
 
-Статус: реализованы `json_backup`, `zip_backup` schema v1, проверяемый offline restore ZIP и визуальные `pdf`/`png`/`svg`. Все HTTP-пути имеют префикс `/api/v1`, требуют Bearer access token и активного membership дерева. Публичного HTTP import endpoint нет.
+Статус: реализованы `json_backup`, `zip_backup` schema v1, проверяемый offline restore ZIP, визуальные `pdf`/`png`/`svg` и переносимый `gedcom` по FamilySearch GEDCOM 7.0. Все HTTP-пути имеют префикс `/api/v1`, требуют Bearer access token и активного membership дерева. Публичного HTTP import endpoint нет.
 
 ## Права и состояния
 
@@ -45,10 +45,11 @@
 Поддерживаемые форматы:
 
 - `json_backup` — один JSON manifest без бинарных файлов, MIME результата `application/json`;
-- `zip_backup` — `manifest.json`, `checksums.sha256`, доступные оригиналы и варианты активных media в состояниях `uploaded`, `processing` и `ready`, MIME результата `application/zip`.
+- `zip_backup` — `manifest.json`, `checksums.sha256`, доступные оригиналы и варианты активных media в состояниях `uploaded`, `processing` и `ready`, MIME результата `application/zip`;
 - `pdf` — одностраничное векторное фамильное древо с embedded Unicode font, MIME `application/pdf`;
 - `png` — полноразмерное raster image, MIME `image/png`;
-- `svg` — масштабируемое vector image без внешних ресурсов, MIME `image/svg+xml`.
+- `svg` — масштабируемое vector image без внешних ресурсов, MIME `image/svg+xml`;
+- `gedcom` — UTF-8 FamilySearch GEDCOM 7.0 с расширением `.ged`, MIME `text/vnd.familysearch.gedcom`.
 
 В ZIP используются только UUID-based пути `media/{mediaID}/...`; пользовательское имя файла не становится ZIP path. Перед упаковкой worker повторно проверяет размер и SHA-256 каждого объекта. Суммарный входной объём ограничен `EXPORT_MAX_ARCHIVE_BYTES` (по умолчанию 256 MiB); превышение завершает задание с `error_code: archive_too_large`.
 
@@ -65,6 +66,12 @@ PDF, PNG и SVG строятся из одного детерминирован�
 Soft-deleted записи, UUID, S3 keys, биографии, документы и приватные media bytes в изображение не попадают. Длинные имена безопасно переносятся и ограничиваются; пустое дерево получает отдельное сообщение. Результат остаётся в private S3 и выдаётся тем же requester/Owner download flow.
 
 Worker ограничивает визуализацию через `EXPORT_MAX_VISUAL_NODES` (по умолчанию `250`), `EXPORT_MAX_VISUAL_PIXELS` (по умолчанию `32000000`) и общий `EXPORT_MAX_ARCHIVE_BYTES`. Превышение завершает задание без retry с `error_code: visual_too_large`.
+
+## GEDCOM 7
+
+`gedcom` строится только из активной части графа: персон, имён, parent-child relations, family unions и их участников. UUID становятся стабильными `INDI`/`FAM` cross-reference identifiers; имена, пол, deceased status, биография, заметки и privacy restriction сохраняются стандартными структурами. Связи представлены симметрично через `FAM.HUSB/WIFE/CHIL` и `INDI.FAMS/FAMC`; `PEDI` передаёт biological/adoptive/foster/guardian/step тип, а `STAT` — поддерживаемую стандартом оценку confidence.
+
+Файл детерминирован, использует UTF-8 BOM, одинаковые CRLF line endings и `CONT` для многострочных значений. Soft-deleted записи, account memberships, S3 keys и media bytes не включаются. Союз из более чем двух участников раскладывается в несколько совместимых `FAM`, потому что GEDCOM 7 допускает в одной записи не больше двух partner pointers. Ограничение результата — общий `EXPORT_MAX_ARCHIVE_BYTES`; превышение завершает задание с `error_code: result_too_large`. Подробный mapping и известные ограничения описаны в [GEDCOM_EXPORT.md](GEDCOM_EXPORT.md).
 
 ## 2. История и статус
 

@@ -34,10 +34,23 @@ func TestNewExportAndDownloadAvailability(t *testing.T) {
 func TestNewExportRejectsUnsupportedFormat(t *testing.T) {
 	t.Parallel()
 	_, err := New(uuid.New(), uuid.New(), uuid.New(), CreateValues{
-		ClientRequestID: uuid.New(), Format: "gedcom",
+		ClientRequestID: uuid.New(), Format: "unsupported",
 	}, time.Now().UTC())
 	if !errors.Is(err, ErrInvalidExport) {
 		t.Fatalf("error = %v, want ErrInvalidExport", err)
+	}
+}
+
+func TestGEDCOMExportFormatAndFilename(t *testing.T) {
+	t.Parallel()
+	export, err := New(uuid.New(), uuid.New(), uuid.New(), CreateValues{
+		ClientRequestID: uuid.New(), Format: FormatGEDCOM,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filename := ResultFilename(export); !strings.HasSuffix(filename, ".ged") {
+		t.Fatalf("filename = %q", filename)
 	}
 }
 

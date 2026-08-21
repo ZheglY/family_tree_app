@@ -37,7 +37,7 @@ func TestRunnerRollsLatestMigrationDownAndBackUp(t *testing.T) {
 	if err := runner.Down(ctx, 1); err != nil {
 		t.Fatalf("Down() error = %v", err)
 	}
-	if version, err := runner.CurrentVersion(ctx); err != nil || version != 8 {
+	if version, err := runner.CurrentVersion(ctx); err != nil || version != 9 {
 		t.Fatalf("version after down = %d, error = %v", version, err)
 	}
 	var exportsPresent, jobsPresent bool
@@ -57,7 +57,7 @@ func TestRunnerRollsLatestMigrationDownAndBackUp(t *testing.T) {
 	if err := runner.Up(ctx); err != nil {
 		t.Fatalf("second Up() error = %v", err)
 	}
-	if version, err := runner.CurrentVersion(ctx); err != nil || version != 9 {
+	if version, err := runner.CurrentVersion(ctx); err != nil || version != 10 {
 		t.Fatalf("final version = %d, error = %v", version, err)
 	}
 }
