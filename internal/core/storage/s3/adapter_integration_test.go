@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -121,6 +122,12 @@ func TestAdapterPresignedUploadHeadAndDownload(t *testing.T) {
 	}
 	if putInfo.SizeBytes != int64(len(variantBody)) || putInfo.ChecksumSHA256 != variantChecksum {
 		t.Fatalf("put object info = %#v", putInfo)
+	}
+	if _, err := adapter.PutObjectIfAbsent(ctx, storage.PutInput{
+		ObjectKey: variantKey, ContentType: "image/jpeg",
+		ChecksumSHA256: variantChecksum, Body: []byte("must not overwrite"),
+	}); !errors.Is(err, storage.ErrObjectAlreadyExists) {
+		t.Fatalf("PutObjectIfAbsent(existing) error = %v", err)
 	}
 	directBody, directInfo, err := adapter.DownloadObject(ctx, variantKey, int64(len(variantBody)))
 	if err != nil {

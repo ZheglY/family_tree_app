@@ -1,6 +1,6 @@
 # Export HTTP API
 
-Статус: реализованы первые два вертикальных среза Этапа 10 — `json_backup` и `zip_backup` schema v1. Все пути имеют префикс `/api/v1`, требуют Bearer access token и активного membership дерева.
+Статус: реализованы `json_backup`, `zip_backup` schema v1 и проверяемый offline restore ZIP в чистые PostgreSQL/S3. Все HTTP-пути имеют префикс `/api/v1`, требуют Bearer access token и активного membership дерева. Публичного HTTP import endpoint нет.
 
 ## Права и состояния
 
@@ -45,7 +45,7 @@
 Поддерживаемые форматы:
 
 - `json_backup` — один JSON manifest без бинарных файлов, MIME результата `application/json`;
-- `zip_backup` — `manifest.json`, `checksums.sha256`, доступные оригиналы и варианты активных `ready` media, MIME результата `application/zip`.
+- `zip_backup` — `manifest.json`, `checksums.sha256`, доступные оригиналы и варианты активных media в состояниях `uploaded`, `processing` и `ready`, MIME результата `application/zip`.
 
 В ZIP используются только UUID-based пути `media/{mediaID}/...`; пользовательское имя файла не становится ZIP path. Перед упаковкой worker повторно проверяет размер и SHA-256 каждого объекта. Суммарный входной объём ограничен `EXPORT_MAX_ARCHIVE_BYTES` (по умолчанию 256 MiB); превышение завершает задание с `error_code: archive_too_large`.
 
@@ -85,4 +85,6 @@
 
 Корневой объект содержит `schema`, `export`, `tree` и массивы `members`, `persons`, `person_names`, `parent_child_relations`, `unions`, `union_members`, `media_assets`, `media_variants`, `person_media`.
 
-Manifest — консистентный repeatable-read snapshot. В него входят мягко удалённые доменные записи, необходимые будущему restore. Не входят S3 object keys, audit log, background jobs и секреты. В `zip_backup` поля `archive_path` связывают активные ready media с файлами внутри ZIP; в `json_backup` эти поля отсутствуют. Импорт/restore пока не объявлен готовым: следующий шаг — автоматическая проверка восстановления ZIP на чистой БД.
+Manifest — консистентный repeatable-read snapshot. В него входят мягко удалённые доменные записи, необходимые restore. Не входят S3 object keys, audit log, background jobs и секреты. В `zip_backup` поля `archive_path` связывают активные `uploaded`/`processing`/`ready` media с файлами внутри ZIP; в `json_backup` эти поля отсутствуют.
+
+Offline-команда `go run ./cmd/restore-backup <archive.zip>` строго проверяет schema, canonical paths, checksum set, размеры и ссылочную целостность, затем восстанавливает записи транзакционно и компенсирует собственные S3 uploads при ошибке. Clean PostgreSQL + real MinIO restore drill покрыт integration-тестом. Подробности — в [BACKUP_RESTORE.md](BACKUP_RESTORE.md). Публичный пользовательский import потребует отдельного контракта mapping/conflict preview и не считается частью текущего HTTP API.

@@ -275,7 +275,8 @@ func loadMedia(
 			return nil, fmt.Errorf("scan export media: %w", err)
 		}
 		result.MediaAssets = append(result.MediaAssets, item)
-		if item.Status == "ready" && item.DeletedAt == nil {
+		if item.DeletedAt == nil &&
+			(item.Status == "uploaded" || item.Status == "processing" || item.Status == "ready") {
 			activeMedia[item.ID] = true
 			files = append(files, manifest.SourceFile{
 				MediaID: item.ID, ArchivePath: fmt.Sprintf("media/%s/original", item.ID),

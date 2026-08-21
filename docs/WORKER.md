@@ -1,6 +1,6 @@
 # PostgreSQL-backed worker
 
-Статус: реализованный контракт Этапа 9 и первых двух export-срезов Этапа 10. Worker запускается отдельным процессом `go run ./cmd/worker`, но использует те же PostgreSQL и приватный S3 bucket, что и Family API.
+Статус: реализованный контракт Этапа 9, JSON/ZIP export и проверяемый offline restore Этапа 10. Worker запускается отдельным процессом `go run ./cmd/worker`, но использует те же PostgreSQL и приватный S3 bucket, что и Family API.
 
 ## Гарантии очереди
 
@@ -54,7 +54,7 @@ Handler идемпотентно выполняет:
 
 Создаётся атомарно с `ExportJob`. Handler делает repeatable-read снимок дерева, сериализует schema-versioned JSON manifest и вычисляет SHA-256. `json_backup` сохраняет только manifest по content-addressed ключу `trees/{treeID}/exports/{exportID}/manifest-{sha256}.json`. В manifest входят данные дерева, участники, персоны и имена, связи, союзы и media metadata, включая мягко удалённые доменные записи. Внутренние object keys, audit log и служебная очередь не экспортируются.
 
-`zip_backup` дополняет тот же manifest доступными оригиналами и вариантами активных `ready` media. Архив содержит безопасные UUID-based пути, `manifest.json` и `checksums.sha256`; каждый скачанный из S3 объект повторно проверяется по размеру и SHA-256. Результат сохраняется как `backup-{sha256}.zip`. Текущая реализация собирает архив в памяти и поэтому отклоняет входной объём выше `EXPORT_MAX_ARCHIVE_BYTES`; streaming/multipart остаётся следующим инфраструктурным улучшением.
+`zip_backup` дополняет тот же manifest доступными оригиналами и вариантами активных media в состояниях `uploaded`, `processing` и `ready`. Это позволяет не потерять файл, загруженный непосредственно перед созданием backup: после restore состояния `uploaded` и `processing` нормализуются в `uploaded` и получают новый `media.process`. Архив содержит безопасные UUID-based пути, `manifest.json` и `checksums.sha256`; каждый скачанный из S3 объект повторно проверяется по размеру и SHA-256. Результат сохраняется как `backup-{sha256}.zip`. Текущая реализация собирает архив в памяти и поэтому отклоняет входной объём выше `EXPORT_MAX_ARCHIVE_BYTES`; streaming/multipart остаётся следующим инфраструктурным улучшением.
 
 Повторная обработка безопасна. После исчерпания retry доменное задание становится `failed`; удалённое во время генерации задание не может снова стать `completed`, а поздно загруженный объект удаляется.
 

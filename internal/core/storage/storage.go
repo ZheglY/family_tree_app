@@ -7,7 +7,10 @@ import (
 	"time"
 )
 
-var ErrObjectNotFound = errors.New("object was not found")
+var (
+	ErrObjectNotFound      = errors.New("object was not found")
+	ErrObjectAlreadyExists = errors.New("object already exists")
+)
 
 type UploadInput struct {
 	ObjectKey      string

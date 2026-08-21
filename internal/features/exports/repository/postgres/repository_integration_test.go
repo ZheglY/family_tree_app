@@ -96,6 +96,29 @@ func TestExportRepositoryLifecycleSnapshotAndTenantIsolation(t *testing.T) {
 	`, nameID, personID, treeID, acceptedAt); err != nil {
 		t.Fatalf("insert export person name: %v", err)
 	}
+	mediaByStatus := map[string]uuid.UUID{
+		"pending": uuid.New(), "uploaded": uuid.New(), "processing": uuid.New(), "ready": uuid.New(),
+	}
+	for status, mediaID := range mediaByStatus {
+		if _, err := database.Pool.Exec(ctx, `
+			INSERT INTO media_assets (
+				id, tree_id, client_request_id, kind, status, object_key,
+				original_filename, mime_type, size_bytes, checksum_sha256,
+				uploaded_by, uploaded_at, created_at, updated_at
+			) VALUES ($1, $2, $3, 'photo', $4, $5, $6, 'image/jpeg', 64, $7, $8, $9, $9, $9)
+		`, mediaID, treeID, uuid.New(), status, "source/"+mediaID.String(), status+".jpg",
+			strings.Repeat("a", 64), editorID, acceptedAt); err != nil {
+			t.Fatalf("insert %s export media: %v", status, err)
+		}
+		if _, err := database.Pool.Exec(ctx, `
+			INSERT INTO media_variants (
+				id, tree_id, media_id, kind, object_key, mime_type,
+				size_bytes, checksum_sha256, width, height, created_at
+			) VALUES ($1, $2, $3, 'thumbnail', $4, 'image/jpeg', 32, $5, 100, 100, $6)
+		`, uuid.New(), treeID, mediaID, "variant/"+mediaID.String(), strings.Repeat("b", 64), acceptedAt); err != nil {
+			t.Fatalf("insert %s export media variant: %v", status, err)
+		}
+	}
 
 	repository := exportpostgres.New(database.Pool)
 	service := exportservice.New(repository, treeRepository, exportObjectStoreStub{})
@@ -159,8 +182,20 @@ func TestExportRepositoryLifecycleSnapshotAndTenantIsolation(t *testing.T) {
 	}
 	if snapshot.Manifest.Schema.Name != domain.ManifestSchemaName || snapshot.Manifest.Tree.ID != treeID ||
 		len(snapshot.Manifest.Members) != 3 || len(snapshot.Manifest.Persons) != 1 ||
-		len(snapshot.Manifest.PersonNames) != 1 || snapshot.Manifest.Persons[0].Biography != "Архивная биография" {
+		len(snapshot.Manifest.PersonNames) != 1 || len(snapshot.Manifest.MediaAssets) != 4 ||
+		len(snapshot.Manifest.MediaVariants) != 4 || len(snapshot.Files) != 6 ||
+		snapshot.Manifest.Persons[0].Biography != "Архивная биография" {
 		t.Fatalf("manifest snapshot = %#v", snapshot)
+	}
+	filesByMedia := make(map[uuid.UUID]int)
+	for _, file := range snapshot.Files {
+		filesByMedia[file.MediaID]++
+	}
+	if filesByMedia[mediaByStatus["pending"]] != 0 ||
+		filesByMedia[mediaByStatus["uploaded"]] != 2 ||
+		filesByMedia[mediaByStatus["processing"]] != 2 ||
+		filesByMedia[mediaByStatus["ready"]] != 2 {
+		t.Fatalf("archive source files by media = %#v", filesByMedia)
 	}
 	now := time.Now().UTC()
 	expiresAt := now.Add(time.Hour)

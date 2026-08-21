@@ -266,6 +266,21 @@ func (a *Adapter) PutObject(
 	ctx context.Context,
 	input storage.PutInput,
 ) (storage.ObjectInfo, error) {
+	return a.putObject(ctx, input, false)
+}
+
+func (a *Adapter) PutObjectIfAbsent(
+	ctx context.Context,
+	input storage.PutInput,
+) (storage.ObjectInfo, error) {
+	return a.putObject(ctx, input, true)
+}
+
+func (a *Adapter) putObject(
+	ctx context.Context,
+	input storage.PutInput,
+	ifAbsent bool,
+) (storage.ObjectInfo, error) {
 	if strings.TrimSpace(input.ObjectKey) == "" || strings.TrimSpace(input.ContentType) == "" ||
 		len(input.Body) == 0 || strings.TrimSpace(input.ChecksumSHA256) == "" {
 		return storage.ObjectInfo{}, fmt.Errorf("put S3 object: invalid input")
@@ -282,6 +297,9 @@ func (a *Adapter) PutObject(
 			"sha256": input.ChecksumSHA256,
 		},
 	}
+	if ifAbsent {
+		parameters.IfNoneMatch = aws.String("*")
+	}
 	if a.encryption != "" {
 		parameters.ServerSideEncryption = a.encryption
 	}
@@ -290,6 +308,12 @@ func (a *Adapter) PutObject(
 	}
 	result, err := a.client.PutObject(ctx, parameters)
 	if err != nil {
+		var apiError smithy.APIError
+		if ifAbsent && errors.As(err, &apiError) &&
+			(apiError.ErrorCode() == "PreconditionFailed" ||
+				apiError.ErrorCode() == "ConditionalRequestConflict") {
+			return storage.ObjectInfo{}, fmt.Errorf("put S3 object: %w", storage.ErrObjectAlreadyExists)
+		}
 		return storage.ObjectInfo{}, fmt.Errorf("put S3 object: %w", err)
 	}
 	return storage.ObjectInfo{
