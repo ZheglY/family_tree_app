@@ -14,6 +14,7 @@ import (
 	"github.com/ZheglY/family_tree_app/internal/features/exports/domain"
 	"github.com/ZheglY/family_tree_app/internal/features/exports/exportjob"
 	"github.com/ZheglY/family_tree_app/internal/features/exports/manifest"
+	"github.com/ZheglY/family_tree_app/internal/features/exports/visual"
 	"github.com/google/uuid"
 )
 
@@ -33,6 +34,8 @@ type Generator struct {
 	objectStore     storage.ProcessorObjectStore
 	resultTTL       time.Duration
 	maxArchiveBytes int64
+	maxVisualNodes  int
+	maxVisualPixels int64
 	now             func() time.Time
 }
 
@@ -41,10 +44,14 @@ func NewGenerator(
 	objectStore storage.ProcessorObjectStore,
 	resultTTL time.Duration,
 	maxArchiveBytes int64,
+	maxVisualNodes int,
+	maxVisualPixels int64,
 ) *Generator {
 	return &Generator{
 		repository: repository, objectStore: objectStore, resultTTL: resultTTL,
 		maxArchiveBytes: maxArchiveBytes,
+		maxVisualNodes:  maxVisualNodes,
+		maxVisualPixels: maxVisualPixels,
 		now:             func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -88,12 +95,28 @@ func (generator *Generator) Handle(ctx context.Context, job jobs.Job) error {
 	case domain.FormatZIPBackup:
 		body, err = buildZIP(ctx, export, snapshot, generator.objectStore, generator.maxArchiveBytes)
 		mimeType = archiveMIMEType
+	case domain.FormatPDF, domain.FormatPNG, domain.FormatSVG:
+		body, mimeType, err = visual.Render(
+			snapshot.Manifest,
+			export.Format,
+			generator.maxVisualNodes,
+			generator.maxVisualPixels,
+		)
+		if err == nil && int64(len(body)) > generator.maxArchiveBytes {
+			err = domain.ErrExportVisualTooLarge
+		}
 	default:
 		err = domain.ErrInvalidExport
 	}
 	if err != nil {
 		if errors.Is(err, domain.ErrExportArchiveTooLarge) {
 			if markErr := generator.repository.MarkFailed(ctx, export, "archive_too_large", generator.now()); markErr != nil {
+				return errors.Join(err, markErr)
+			}
+			return nil
+		}
+		if errors.Is(err, domain.ErrExportVisualTooLarge) {
+			if markErr := generator.repository.MarkFailed(ctx, export, "visual_too_large", generator.now()); markErr != nil {
 				return errors.Join(err, markErr)
 			}
 			return nil
@@ -141,9 +164,14 @@ func (generator *Generator) retryOrFail(
 }
 
 func ResultObjectKey(treeID uuid.UUID, exportID uuid.UUID, format string, checksum string) string {
-	filename := fmt.Sprintf("manifest-%s.json", checksum)
-	if format == domain.FormatZIPBackup {
+	var filename string
+	switch format {
+	case domain.FormatZIPBackup:
 		filename = fmt.Sprintf("backup-%s.zip", checksum)
+	case domain.FormatPDF, domain.FormatPNG, domain.FormatSVG:
+		filename = fmt.Sprintf("tree-%s.%s", checksum, format)
+	default:
+		filename = fmt.Sprintf("manifest-%s.json", checksum)
 	}
 	return fmt.Sprintf("trees/%s/exports/%s/%s", treeID, exportID, filename)
 }

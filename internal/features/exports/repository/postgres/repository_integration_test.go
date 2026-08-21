@@ -2,6 +2,8 @@ package postgres_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"os"
@@ -12,8 +14,10 @@ import (
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
 	"github.com/ZheglY/family_tree_app/internal/core/storage"
 	"github.com/ZheglY/family_tree_app/internal/features/exports/domain"
+	exportprocessing "github.com/ZheglY/family_tree_app/internal/features/exports/processing"
 	exportpostgres "github.com/ZheglY/family_tree_app/internal/features/exports/repository/postgres"
 	exportservice "github.com/ZheglY/family_tree_app/internal/features/exports/service"
+	"github.com/ZheglY/family_tree_app/internal/features/exports/visual"
 	treedomain "github.com/ZheglY/family_tree_app/internal/features/trees/domain"
 	treepostgres "github.com/ZheglY/family_tree_app/internal/features/trees/repository/postgres"
 	"github.com/ZheglY/family_tree_app/internal/testdatabase"
@@ -249,6 +253,49 @@ func TestExportRepositoryLifecycleSnapshotAndTenantIsolation(t *testing.T) {
 	}
 	if deleteJobs != 1 || downloadAudits != 1 || deleteAudits != 1 {
 		t.Fatalf("delete jobs = %d, download audits = %d, delete audits = %d", deleteJobs, downloadAudits, deleteAudits)
+	}
+
+	visualCreated, err := service.Create(ctx, exportservice.CreateCommand{
+		ActorUserID: editorID, TreeID: treeID,
+		Values:    domain.CreateValues{ClientRequestID: uuid.New(), Format: domain.FormatSVG},
+		RequestID: "request-visual-export", IPAddress: "127.0.0.1",
+	})
+	if err != nil || !visualCreated.Created || visualCreated.Export.Format != domain.FormatSVG {
+		t.Fatalf("visual export = %#v, error = %v", visualCreated, err)
+	}
+	visualRunning, err := repository.AcquireForGeneration(
+		ctx, treeID, visualCreated.Export.ID, time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	visualSnapshot, err := repository.LoadManifest(ctx, visualRunning)
+	if err != nil {
+		t.Fatal(err)
+	}
+	visualBody, visualMIME, err := visual.Render(
+		visualSnapshot.Manifest, domain.FormatSVG, 250, 64*1024*1024,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	visualDigest := sha256.Sum256(visualBody)
+	visualChecksum := hex.EncodeToString(visualDigest[:])
+	visualKey := exportprocessing.ResultObjectKey(
+		treeID, visualCreated.Export.ID, domain.FormatSVG, visualChecksum,
+	)
+	visualNow := time.Now().UTC()
+	if err := repository.MarkCompleted(
+		ctx, visualRunning, visualKey, visualMIME, int64(len(visualBody)), visualChecksum,
+		visualNow.Add(time.Hour), visualNow,
+	); err != nil {
+		t.Fatalf("complete visual export: %v", err)
+	}
+	visualDownload, err := service.Download(ctx, exportservice.MutationCommand{
+		ActorUserID: editorID, TreeID: treeID, ExportID: visualCreated.Export.ID,
+	})
+	if err != nil || visualDownload.Download == nil || !strings.HasSuffix(visualKey, ".svg") {
+		t.Fatalf("visual download = %#v, error = %v", visualDownload, err)
 	}
 }
 

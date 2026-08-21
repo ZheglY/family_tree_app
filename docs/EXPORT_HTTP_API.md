@@ -1,6 +1,6 @@
 # Export HTTP API
 
-Статус: реализованы `json_backup`, `zip_backup` schema v1 и проверяемый offline restore ZIP в чистые PostgreSQL/S3. Все HTTP-пути имеют префикс `/api/v1`, требуют Bearer access token и активного membership дерева. Публичного HTTP import endpoint нет.
+Статус: реализованы `json_backup`, `zip_backup` schema v1, проверяемый offline restore ZIP и визуальные `pdf`/`png`/`svg`. Все HTTP-пути имеют префикс `/api/v1`, требуют Bearer access token и активного membership дерева. Публичного HTTP import endpoint нет.
 
 ## Права и состояния
 
@@ -46,8 +46,25 @@
 
 - `json_backup` — один JSON manifest без бинарных файлов, MIME результата `application/json`;
 - `zip_backup` — `manifest.json`, `checksums.sha256`, доступные оригиналы и варианты активных media в состояниях `uploaded`, `processing` и `ready`, MIME результата `application/zip`.
+- `pdf` — одностраничное векторное фамильное древо с embedded Unicode font, MIME `application/pdf`;
+- `png` — полноразмерное raster image, MIME `image/png`;
+- `svg` — масштабируемое vector image без внешних ресурсов, MIME `image/svg+xml`.
 
 В ZIP используются только UUID-based пути `media/{mediaID}/...`; пользовательское имя файла не становится ZIP path. Перед упаковкой worker повторно проверяет размер и SHA-256 каждого объекта. Суммарный входной объём ограничен `EXPORT_MAX_ARCHIVE_BYTES` (по умолчанию 256 MiB); превышение завершает задание с `error_code: archive_too_large`.
+
+## Визуальный экспорт
+
+PDF, PNG и SVG строятся из одного детерминированного scene/layout, поэтому содержат одинаковые поколения, подписи и связи. В первый визуальный срез входят:
+
+- активные персоны с preferred name, полом и life status;
+- активные parent-child relations;
+- активные family unions, обозначенные отдельной пунктирной связью;
+- выравнивание партнёров по одному поколению и направление поколений сверху вниз;
+- спокойная историческая палитра: архивная бумага, бордовый контур и золотые акценты.
+
+Soft-deleted записи, UUID, S3 keys, биографии, документы и приватные media bytes в изображение не попадают. Длинные имена безопасно переносятся и ограничиваются; пустое дерево получает отдельное сообщение. Результат остаётся в private S3 и выдаётся тем же requester/Owner download flow.
+
+Worker ограничивает визуализацию через `EXPORT_MAX_VISUAL_NODES` (по умолчанию `250`), `EXPORT_MAX_VISUAL_PIXELS` (по умолчанию `32000000`) и общий `EXPORT_MAX_ARCHIVE_BYTES`. Превышение завершает задание без retry с `error_code: visual_too_large`.
 
 ## 2. История и статус
 

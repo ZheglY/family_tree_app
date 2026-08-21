@@ -13,6 +13,9 @@ import (
 const (
 	FormatJSONBackup = "json_backup"
 	FormatZIPBackup  = "zip_backup"
+	FormatPDF        = "pdf"
+	FormatPNG        = "png"
+	FormatSVG        = "svg"
 
 	StatusQueued    = "queued"
 	StatusRunning   = "running"
@@ -33,6 +36,7 @@ var (
 	ErrExportResultUnavailable = errors.New("export result is unavailable")
 	ErrExportTreeUnavailable   = errors.New("export tree is unavailable")
 	ErrExportArchiveTooLarge   = errors.New("export archive is too large")
+	ErrExportVisualTooLarge    = errors.New("visual export is too large")
 	ErrExportSourceInvalid     = errors.New("export source file is invalid")
 )
 
@@ -98,10 +102,14 @@ func New(
 }
 
 func ResultFilename(value Export) string {
-	if value.Format == FormatZIPBackup {
+	switch value.Format {
+	case FormatZIPBackup:
 		return fmt.Sprintf("family-tree-%s-backup.zip", value.TreeID)
+	case FormatPDF, FormatPNG, FormatSVG:
+		return fmt.Sprintf("family-tree-%s.%s", value.TreeID, value.Format)
+	default:
+		return fmt.Sprintf("family-tree-%s-export.json", value.TreeID)
 	}
-	return fmt.Sprintf("family-tree-%s-export.json", value.TreeID)
 }
 
 func CanDownload(value Export, now time.Time) bool {
@@ -110,5 +118,6 @@ func CanDownload(value Export, now time.Time) bool {
 }
 
 func supportedFormat(format string) bool {
-	return format == FormatJSONBackup || format == FormatZIPBackup
+	return format == FormatJSONBackup || format == FormatZIPBackup ||
+		format == FormatPDF || format == FormatPNG || format == FormatSVG
 }

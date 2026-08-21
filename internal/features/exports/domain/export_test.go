@@ -53,3 +53,18 @@ func TestNewZIPExportUsesArchiveFilename(t *testing.T) {
 		t.Fatalf("filename = %q", filename)
 	}
 }
+
+func TestVisualExportFormatsAndFilenames(t *testing.T) {
+	t.Parallel()
+	for _, format := range []string{FormatPDF, FormatPNG, FormatSVG} {
+		export, err := New(uuid.New(), uuid.New(), uuid.New(), CreateValues{
+			ClientRequestID: uuid.New(), Format: format,
+		}, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("New(%s) error = %v", format, err)
+		}
+		if filename := ResultFilename(export); !strings.HasSuffix(filename, "."+format) {
+			t.Fatalf("ResultFilename(%s) = %q", format, filename)
+		}
+	}
+}

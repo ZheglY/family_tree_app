@@ -156,7 +156,7 @@ func TestGeneratorCreatesVersionedManifest(t *testing.T) {
 		}},
 	}
 	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
-	generator := NewGenerator(repository, objectStore, 24*time.Hour, 16*1024*1024)
+	generator := NewGenerator(repository, objectStore, 24*time.Hour, 16*1024*1024, 250, 64*1024*1024)
 	generator.now = func() time.Time { return now }
 	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
 	if err := generator.Handle(context.Background(), jobs.Job{
@@ -191,7 +191,7 @@ func TestGeneratorMarksPermanentFailure(t *testing.T) {
 	repository := &processingRepositoryStub{export: export, loadErr: errors.New("database unavailable")}
 	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
 	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
-	err := NewGenerator(repository, objectStore, time.Hour, 16*1024*1024).Handle(context.Background(), jobs.Job{
+	err := NewGenerator(repository, objectStore, time.Hour, 16*1024*1024, 250, 64*1024*1024).Handle(context.Background(), jobs.Job{
 		Kind: exportjob.KindGenerate, Payload: payload, Attempts: 5, MaxAttempts: 5,
 	})
 	if err == nil || repository.failedCode != "generation_failed" {
@@ -240,7 +240,7 @@ func TestGeneratorCreatesZIPBackupWithFilesAndChecksums(t *testing.T) {
 			ChecksumSHA256: sourceChecksumHex, Body: sourceBody,
 		},
 	}}
-	generator := NewGenerator(repository, objectStore, 24*time.Hour, 16*1024*1024)
+	generator := NewGenerator(repository, objectStore, 24*time.Hour, 16*1024*1024, 250, 64*1024*1024)
 	generator.now = func() time.Time { return now }
 	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
 	if err := generator.Handle(context.Background(), jobs.Job{
@@ -312,13 +312,92 @@ func TestGeneratorRejectsOversizedZIPBeforeDownloadingFiles(t *testing.T) {
 	}
 	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
 	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
-	err := NewGenerator(repository, objectStore, time.Hour, 1024*1024).Handle(
+	err := NewGenerator(repository, objectStore, time.Hour, 1024*1024, 250, 64*1024*1024).Handle(
 		context.Background(),
 		jobs.Job{Kind: exportjob.KindGenerate, Payload: payload, Attempts: 1, MaxAttempts: 5},
 	)
 	if err != nil || repository.failedCode != "archive_too_large" || len(objectStore.objects) != 0 {
 		t.Fatalf("error = %v, failure code = %q, objects = %#v", err, repository.failedCode, objectStore.objects)
 	}
+}
+
+func TestGeneratorCreatesVisualFormats(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		format string
+		mime   string
+		suffix string
+		magic  []byte
+	}{
+		{format: domain.FormatSVG, mime: "image/svg+xml", suffix: ".svg", magic: []byte("<svg")},
+		{format: domain.FormatPNG, mime: "image/png", suffix: ".png", magic: []byte("\x89PNG")},
+		{format: domain.FormatPDF, mime: "application/pdf", suffix: ".pdf", magic: []byte("%PDF-")},
+	} {
+		t.Run(testCase.format, func(t *testing.T) {
+			now := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
+			export, err := domain.New(uuid.New(), uuid.New(), uuid.New(), domain.CreateValues{
+				ClientRequestID: uuid.New(), Format: testCase.format,
+			}, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			repository := &processingRepositoryStub{export: export, snapshot: testVisualSnapshot(export, now)}
+			objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
+			generator := NewGenerator(repository, objectStore, 24*time.Hour, 16*1024*1024, 20, 64*1024*1024)
+			generator.now = func() time.Time { return now }
+			payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
+			if err := generator.Handle(context.Background(), jobs.Job{
+				Kind: exportjob.KindGenerate, Payload: payload, Attempts: 1, MaxAttempts: 5,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			stored, exists := objectStore.objects[repository.export.ResultObjectKey]
+			if !exists || !repository.completed || stored.ContentType != testCase.mime ||
+				!strings.HasSuffix(stored.ObjectKey, testCase.suffix) || !bytes.HasPrefix(stored.Body, testCase.magic) {
+				t.Fatalf("stored visual = %#v, export = %#v", stored, repository.export)
+			}
+		})
+	}
+}
+
+func TestGeneratorRejectsOversizedVisualTree(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
+	export, _ := domain.New(uuid.New(), uuid.New(), uuid.New(), domain.CreateValues{
+		ClientRequestID: uuid.New(), Format: domain.FormatSVG,
+	}, now)
+	repository := &processingRepositoryStub{export: export, snapshot: testVisualSnapshot(export, now)}
+	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
+	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
+	err := NewGenerator(repository, objectStore, time.Hour, 16*1024*1024, 1, 64*1024*1024).Handle(
+		context.Background(),
+		jobs.Job{Kind: exportjob.KindGenerate, Payload: payload, Attempts: 1, MaxAttempts: 5},
+	)
+	if err != nil || repository.failedCode != "visual_too_large" || len(objectStore.objects) != 0 {
+		t.Fatalf("error = %v, failure code = %q, objects = %#v", err, repository.failedCode, objectStore.objects)
+	}
+}
+
+func testVisualSnapshot(export domain.Export, now time.Time) manifest.Snapshot {
+	parentID, childID := uuid.New(), uuid.New()
+	return manifest.Snapshot{Manifest: manifest.Manifest{
+		Schema: manifest.Schema{Name: domain.ManifestSchemaName, Version: domain.ManifestSchemaVersion},
+		Export: manifest.ExportMetadata{
+			ID: export.ID, Format: export.Format, RequestedBy: export.RequestedBy, CreatedAt: now,
+		},
+		Tree: manifest.Tree{ID: export.TreeID, Name: "Род Волконских"},
+		Persons: []manifest.Person{
+			{ID: parentID, Sex: "female", LifeStatus: "deceased"},
+			{ID: childID, Sex: "male", LifeStatus: "alive"},
+		},
+		PersonNames: []manifest.PersonName{
+			{ID: uuid.New(), PersonID: parentID, FullText: "Анна Волконская", IsPreferred: true},
+			{ID: uuid.New(), PersonID: childID, FullText: "Пётр Волконский", IsPreferred: true},
+		},
+		ParentChildRelations: []manifest.ParentChildRelation{
+			{ID: uuid.New(), ParentPersonID: parentID, ChildPersonID: childID},
+		},
+	}}
 }
 
 func TestCleanupAndDeletionRemovePrivateResult(t *testing.T) {

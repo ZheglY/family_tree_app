@@ -84,6 +84,8 @@ func run(ctx context.Context) error {
 				objectStorage,
 				exportConfig.ResultTTL,
 				exportConfig.MaxArchiveBytes,
+				exportConfig.MaxVisualNodes,
+				exportConfig.MaxVisualPixels,
 			),
 			exportjob.KindCleanup: exportprocessing.NewCleanup(exportRepository, objectStorage),
 			exportjob.KindDelete:  exportprocessing.NewDeleter(exportRepository, objectStorage),
