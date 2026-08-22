@@ -37,4 +37,4 @@ go test ./... -count=1 -timeout=240s
 go vet ./...
 ```
 
-Следующие hardening-срезы: типизировать все success response schemas вместо общих JSON object там, где это ещё не сделано; добавить security headers/CORS/CSRF; затем metrics/logging audit, backup drills, нагрузочные/E2E проверки и staging release flow.
+Browser security perimeter описан отдельно в [`HTTP_SECURITY.md`](HTTP_SECURITY.md). Следующие hardening-срезы: типизировать все success response schemas вместо общих JSON object там, где это ещё не сделано; затем metrics/logging audit, backup drills, нагрузочные/E2E проверки и staging release flow.

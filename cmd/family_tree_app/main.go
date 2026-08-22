@@ -180,12 +180,21 @@ func main() {
 	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
 	httpConfig := server.NewConfigMust()
+	browserSecurity, err := middleware.BrowserSecurity(middleware.BrowserSecurityConfig{
+		AllowedOrigins:    httpConfig.AllowedOrigins,
+		HSTSMaxAgeSeconds: httpConfig.HSTSMaxAgeSeconds,
+		CORSMaxAgeSeconds: httpConfig.CORSMaxAgeSeconds,
+	})
+	if err != nil {
+		panic(fmt.Errorf("initialize browser security middleware: %w", err))
+	}
 	httpServer := server.NewHTTPServer(
 		httpConfig,
 		log,
 		middleware.RequestID(),
 		middleware.Logger(log),
 		middleware.Recovery(),
+		browserSecurity,
 		middleware.BodyLimit(httpConfig.MaxBodyBytes),
 		middleware.Trace(),
 	)

@@ -21,6 +21,9 @@ type Config struct {
 	WriteTimeout      time.Duration `envconfig:"WRITE_TIMEOUT" default:"30s"`
 	IdleTimeout       time.Duration `envconfig:"IDLE_TIMEOUT" default:"60s"`
 	MaxBodyBytes      int64         `envconfig:"MAX_BODY_BYTES" default:"1048576"`
+	AllowedOrigins    string        `envconfig:"ALLOWED_ORIGINS" default:""`
+	HSTSMaxAgeSeconds int           `envconfig:"HSTS_MAX_AGE_SECONDS" default:"0"`
+	CORSMaxAgeSeconds int           `envconfig:"CORS_MAX_AGE_SECONDS" default:"600"`
 }
 
 func NewConfig() (Config, error) {
@@ -44,6 +47,9 @@ func NewConfig() (Config, error) {
 
 	if config.MaxBodyBytes <= 0 {
 		return Config{}, fmt.Errorf("HTTP max body bytes must be positive")
+	}
+	if config.HSTSMaxAgeSeconds < 0 || config.CORSMaxAgeSeconds < 0 {
+		return Config{}, fmt.Errorf("HTTP browser security max ages cannot be negative")
 	}
 
 	return config, nil
