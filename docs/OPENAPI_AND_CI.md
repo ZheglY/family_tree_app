@@ -37,4 +37,4 @@ go test ./... -count=1 -timeout=240s
 go vet ./...
 ```
 
-Browser security perimeter описан отдельно в [`HTTP_SECURITY.md`](HTTP_SECURITY.md), метрики и logging audit — в [`OBSERVABILITY.md`](OBSERVABILITY.md), а PostgreSQL/S3 restore drill — в [`INFRASTRUCTURE_BACKUPS.md`](INFRASTRUCTURE_BACKUPS.md). Все success response schemas типизированы по фактическим transport DTO. Следующие hardening-срезы: нагрузочные/E2E проверки и staging release flow.
+Browser security perimeter описан отдельно в [`HTTP_SECURITY.md`](HTTP_SECURITY.md), метрики и logging audit — в [`OBSERVABILITY.md`](OBSERVABILITY.md), PostgreSQL/S3 restore drill — в [`INFRASTRUCTURE_BACKUPS.md`](INFRASTRUCTURE_BACKUPS.md), а large-graph/E2E gates — в [`LOAD_AND_E2E.md`](LOAD_AND_E2E.md). Все success response schemas типизированы по фактическим transport DTO. Следующий hardening-срез — staging release flow.
