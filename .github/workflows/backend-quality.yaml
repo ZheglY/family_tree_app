@@ -13,6 +13,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  container-image:
+    name: Production container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Build production image
+        run: >-
+          docker build
+          --build-arg VERSION=ci
+          --build-arg VCS_REF=${GITHUB_SHA}
+          --tag family-tree-backend:${GITHUB_SHA}
+          .
+      - name: Verify runtime contract
+        run: |
+          image="family-tree-backend:${GITHUB_SHA}"
+          docker run --rm --read-only --tmpfs /tmp:mode=1777 --entrypoint /bin/sh "$image" -c \
+            'test "$(id -u)" = 10001 && mkdir -p /tmp/family-tree-logs && test -x /app/family-api && test -x /app/family-worker && test -x /app/family-migrate && test -x /app/family-restore-backup'
+      - name: Validate staging Compose template
+        env:
+          FAMILY_TREE_IMAGE: family-tree-backend:ci
+          STAGING_ENV_FILE: ${{ github.workspace }}/deploy/staging/staging.env.example
+        run: docker compose -f deploy/staging/compose.yaml config --quiet
+
   static-and-race:
     name: Static analysis and race tests
     runs-on: ubuntu-latest
