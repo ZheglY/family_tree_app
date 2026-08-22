@@ -25,7 +25,7 @@ go test ./api -count=1
 Workflow `.github/workflows/backend-quality.yaml` запускается для push, pull request и вручную. Он имеет только `contents: read`, отменяет устаревший run той же ветки и разделён на два независимых job:
 
 1. `static-and-race` проверяет `go mod tidy`, `gofmt`, workflow через actionlint, `go vet` и выполняет весь Go test suite с race detector; integration-тесты без environment variables корректно пропускаются.
-2. `postgres-and-s3` поднимает PostgreSQL 17 и закреплённую версию MinIO, затем выполняет полный suite с `FAMILY_TEST_DATABASE_URL` и `S3_TEST_ENDPOINT`. Так clean-schema migrations, repositories, private S3, backup/restore и export pipelines выполняются в CI, а не только локально.
+2. `postgres-and-s3` поднимает PostgreSQL 17 и закреплённую версию MinIO, затем выполняет полный suite с `FAMILY_TEST_DATABASE_URL` и `S3_TEST_ENDPOINT`. После тестов job создаёт отдельные database/buckets и выполняет infrastructure dump/restore drill через PostgreSQL client 17 и AWS CLI. Так clean-schema migrations, repositories, private S3, оба уровня backup/restore и export pipelines выполняются в CI, а не только локально.
 
 Локальный эквивалент интеграционного job:
 
@@ -37,4 +37,4 @@ go test ./... -count=1 -timeout=240s
 go vet ./...
 ```
 
-Browser security perimeter описан отдельно в [`HTTP_SECURITY.md`](HTTP_SECURITY.md), а метрики и logging audit — в [`OBSERVABILITY.md`](OBSERVABILITY.md). Все success response schemas типизированы по фактическим transport DTO. Следующие hardening-срезы: backup drills, нагрузочные/E2E проверки и staging release flow.
+Browser security perimeter описан отдельно в [`HTTP_SECURITY.md`](HTTP_SECURITY.md), метрики и logging audit — в [`OBSERVABILITY.md`](OBSERVABILITY.md), а PostgreSQL/S3 restore drill — в [`INFRASTRUCTURE_BACKUPS.md`](INFRASTRUCTURE_BACKUPS.md). Все success response schemas типизированы по фактическим transport DTO. Следующие hardening-срезы: нагрузочные/E2E проверки и staging release flow.
