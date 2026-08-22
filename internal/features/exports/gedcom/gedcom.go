@@ -15,6 +15,13 @@ import (
 
 const MIMEType = "text/vnd.familysearch.gedcom"
 
+type MediaFile struct {
+	MediaID     uuid.UUID
+	VariantKind string
+	Path        string
+	MIMEType    string
+}
+
 type family struct {
 	XRef         string
 	Partners     []uuid.UUID
@@ -35,6 +42,17 @@ type personLinks struct {
 	FamiliesAsChild   map[string]familyChildLink
 }
 
+type multimediaRecord struct {
+	Asset manifest.MediaAsset
+	Files []MediaFile
+}
+
+type multimediaLink struct {
+	MediaID   uuid.UUID
+	Title     string
+	SortOrder int
+}
+
 type relationGroup struct {
 	ChildID    uuid.UUID
 	Type       string
@@ -49,9 +67,20 @@ type writer struct {
 
 // Render converts the active graph snapshot into a deterministic FamilySearch GEDCOM 7.0 dataset.
 func Render(value manifest.Manifest) ([]byte, error) {
+	return render(value, nil)
+}
+
+// RenderWithMedia adds standard OBJE records and person multimedia links for GEDZIP.
+func RenderWithMedia(value manifest.Manifest, files []MediaFile) ([]byte, error) {
+	return render(value, files)
+}
+
+func render(value manifest.Manifest, mediaFiles []MediaFile) ([]byte, error) {
 	persons := activePersons(value.Persons)
 	families, links := buildUnionFamilies(value, persons)
 	families, links = addParentChildFamilies(value, persons, families, links)
+	multimedia := buildMultimediaRecords(value.MediaAssets, mediaFiles)
+	mediaLinks := buildMultimediaLinks(value, persons, multimedia)
 
 	result := &writer{}
 	result.buffer.WriteString("\xEF\xBB\xBF")
@@ -64,7 +93,7 @@ func Render(value manifest.Manifest) ([]byte, error) {
 	if !value.Export.CreatedAt.IsZero() {
 		createdAt := value.Export.CreatedAt.UTC()
 		result.line(1, "", "DATE", gedcomDate(createdAt.Day(), int(createdAt.Month()), createdAt.Year()))
-		result.line(2, "", "TIME", createdAt.Format("15:04:05"))
+		result.line(2, "", "TIME", createdAt.Format("15:04:05Z"))
 	}
 	if locale := cleanInline(value.Tree.Locale); locale != "" {
 		result.line(1, "", "LANG", locale)
@@ -76,11 +105,14 @@ func Render(value manifest.Manifest) ([]byte, error) {
 	personIDs := sortedPersonIDs(persons)
 	names := namesByPerson(value.PersonNames, persons)
 	for _, personID := range personIDs {
-		writeIndividual(result, persons[personID], names[personID], links[personID])
+		writeIndividual(result, persons[personID], names[personID], links[personID], mediaLinks[personID])
 	}
 	sort.Slice(families, func(left int, right int) bool { return families[left].XRef < families[right].XRef })
 	for _, item := range families {
 		writeFamily(result, item, persons)
+	}
+	for _, item := range multimedia {
+		writeMultimedia(result, item)
 	}
 	result.line(0, "", "TRLR", "")
 	return result.buffer.Bytes(), nil
@@ -92,6 +124,103 @@ func activePersons(values []manifest.Person) map[uuid.UUID]manifest.Person {
 		if person.ID != uuid.Nil && person.DeletedAt == nil {
 			result[person.ID] = person
 		}
+	}
+	return result
+}
+
+func buildMultimediaRecords(
+	assets []manifest.MediaAsset,
+	files []MediaFile,
+) []multimediaRecord {
+	activeAssets := make(map[uuid.UUID]manifest.MediaAsset)
+	for _, asset := range assets {
+		if asset.ID != uuid.Nil && asset.DeletedAt == nil {
+			activeAssets[asset.ID] = asset
+		}
+	}
+	filesByMedia := make(map[uuid.UUID][]MediaFile)
+	for _, file := range files {
+		if _, exists := activeAssets[file.MediaID]; !exists || cleanInline(file.Path) == "" ||
+			cleanInline(file.MIMEType) == "" {
+			continue
+		}
+		filesByMedia[file.MediaID] = append(filesByMedia[file.MediaID], file)
+	}
+	mediaIDs := make([]uuid.UUID, 0, len(filesByMedia))
+	for mediaID := range filesByMedia {
+		mediaIDs = append(mediaIDs, mediaID)
+	}
+	sortUUIDs(mediaIDs)
+	result := make([]multimediaRecord, 0, len(mediaIDs))
+	for _, mediaID := range mediaIDs {
+		mediaFiles := filesByMedia[mediaID]
+		sort.Slice(mediaFiles, func(left int, right int) bool {
+			if (mediaFiles[left].VariantKind == "") != (mediaFiles[right].VariantKind == "") {
+				return mediaFiles[left].VariantKind == ""
+			}
+			return mediaFiles[left].Path < mediaFiles[right].Path
+		})
+		result = append(result, multimediaRecord{Asset: activeAssets[mediaID], Files: mediaFiles})
+	}
+	return result
+}
+
+func buildMultimediaLinks(
+	value manifest.Manifest,
+	persons map[uuid.UUID]manifest.Person,
+	records []multimediaRecord,
+) map[uuid.UUID][]multimediaLink {
+	media := make(map[uuid.UUID]manifest.MediaAsset, len(records))
+	for _, record := range records {
+		media[record.Asset.ID] = record.Asset
+	}
+	result := make(map[uuid.UUID][]multimediaLink)
+	seen := make(map[string]struct{})
+	for _, attachment := range value.PersonMedia {
+		if _, exists := persons[attachment.PersonID]; !exists {
+			continue
+		}
+		asset, exists := media[attachment.MediaID]
+		if !exists {
+			continue
+		}
+		key := attachment.PersonID.String() + "/" + attachment.MediaID.String()
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result[attachment.PersonID] = append(result[attachment.PersonID], multimediaLink{
+			MediaID: attachment.MediaID, Title: multimediaTitle(asset),
+			SortOrder: attachment.SortOrder,
+		})
+	}
+	for personID, person := range persons {
+		if person.PrimaryMediaID == nil {
+			continue
+		}
+		asset, exists := media[*person.PrimaryMediaID]
+		if !exists {
+			continue
+		}
+		key := personID.String() + "/" + person.PrimaryMediaID.String()
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result[personID] = append(result[personID], multimediaLink{
+			MediaID: *person.PrimaryMediaID, Title: multimediaTitle(asset),
+			SortOrder: -1,
+		})
+	}
+	for personID := range result {
+		links := result[personID]
+		sort.Slice(links, func(left int, right int) bool {
+			if links[left].SortOrder != links[right].SortOrder {
+				return links[left].SortOrder < links[right].SortOrder
+			}
+			return links[left].MediaID.String() < links[right].MediaID.String()
+		})
+		result[personID] = links
 	}
 	return result
 }
@@ -281,6 +410,7 @@ func writeIndividual(
 	person manifest.Person,
 	names []manifest.PersonName,
 	links *personLinks,
+	mediaLinks []multimediaLink,
 ) {
 	result.line(0, personXRef(person.ID), "INDI", "")
 	if person.PrivacyLevel == "tree_members" {
@@ -327,6 +457,12 @@ func writeIndividual(
 		}
 		for _, note := range link.Notes {
 			result.line(2, "", "NOTE", note)
+		}
+	}
+	for _, link := range mediaLinks {
+		result.pointerLine(1, "OBJE", mediaXRef(link.MediaID))
+		if link.Title != "" {
+			result.line(2, "", "TITL", link.Title)
 		}
 	}
 }
@@ -410,6 +546,40 @@ func writeUnion(result *writer, union manifest.FamilyUnion) {
 	if reason := cleanText(union.EndReason); reason != "" {
 		result.line(1, "", "NOTE", "Union end reason:\n"+reason)
 	}
+}
+
+func writeMultimedia(result *writer, item multimediaRecord) {
+	if len(item.Files) == 0 {
+		return
+	}
+	result.line(0, mediaXRef(item.Asset.ID), "OBJE", "")
+	result.line(1, "", "RESN", "CONFIDENTIAL")
+	primary := item.Files[0]
+	result.line(1, "", "FILE", cleanInline(primary.Path))
+	result.line(2, "", "FORM", cleanInline(primary.MIMEType))
+	medium, phrase := gedcomMedium(item.Asset.Kind)
+	result.line(3, "", "MEDI", medium)
+	if phrase != "" {
+		result.line(4, "", "PHRASE", phrase)
+	}
+	if title := multimediaTitle(item.Asset); title != "" {
+		result.line(2, "", "TITL", title)
+	}
+	for _, file := range item.Files[1:] {
+		result.line(2, "", "TRAN", cleanInline(file.Path))
+		result.line(3, "", "FORM", cleanInline(file.MIMEType))
+	}
+	result.line(1, "", "UID", item.Asset.ID.String())
+	if description := cleanText(item.Asset.Description); description != "" {
+		result.line(1, "", "NOTE", description)
+	}
+}
+
+func multimediaTitle(asset manifest.MediaAsset) string {
+	if caption := cleanText(asset.Caption); caption != "" {
+		return caption
+	}
+	return cleanInline(asset.OriginalFilename)
 }
 
 func namesByPerson(
@@ -542,6 +712,17 @@ func gedcomSex(value string) string {
 	}
 }
 
+func gedcomMedium(value string) (string, string) {
+	switch value {
+	case "photo":
+		return "PHOTO", ""
+	case "document":
+		return "ELECTRONIC", ""
+	default:
+		return "OTHER", "Other"
+	}
+}
+
 func gedcomPedigree(value string) (string, string) {
 	switch value {
 	case "biological":
@@ -649,6 +830,8 @@ func escapeLineString(value string) string {
 func pointer(xref string) string { return "@" + xref + "@" }
 
 func personXRef(personID uuid.UUID) string { return "I" + compactUUID(personID) }
+
+func mediaXRef(mediaID uuid.UUID) string { return "O" + compactUUID(mediaID) }
 
 func compactUUID(value uuid.UUID) string {
 	return strings.ToUpper(strings.ReplaceAll(value.String(), "-", ""))

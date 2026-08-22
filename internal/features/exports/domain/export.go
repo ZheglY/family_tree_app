@@ -17,6 +17,7 @@ const (
 	FormatPNG        = "png"
 	FormatSVG        = "svg"
 	FormatGEDCOM     = "gedcom"
+	FormatGEDZIP     = "gedzip"
 
 	StatusQueued    = "queued"
 	StatusRunning   = "running"
@@ -111,6 +112,8 @@ func ResultFilename(value Export) string {
 		return fmt.Sprintf("family-tree-%s.%s", value.TreeID, value.Format)
 	case FormatGEDCOM:
 		return fmt.Sprintf("family-tree-%s.ged", value.TreeID)
+	case FormatGEDZIP:
+		return fmt.Sprintf("family-tree-%s.gdz", value.TreeID)
 	default:
 		return fmt.Sprintf("family-tree-%s-export.json", value.TreeID)
 	}
@@ -124,5 +127,5 @@ func CanDownload(value Export, now time.Time) bool {
 func supportedFormat(format string) bool {
 	return format == FormatJSONBackup || format == FormatZIPBackup ||
 		format == FormatPDF || format == FormatPNG || format == FormatSVG ||
-		format == FormatGEDCOM
+		format == FormatGEDCOM || format == FormatGEDZIP
 }

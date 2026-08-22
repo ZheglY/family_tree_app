@@ -2,7 +2,7 @@
 
 Backend многопользовательского сервиса семейных деревьев. Family API построен как модульный монолит на Go, использует отдельный gRPC Identity Service и собственную PostgreSQL для семейного домена.
 
-Канонические документы: [концепция](docs/PROJECT_CONCEPT.md), [backend roadmap](docs/BACKEND_ROADMAP.md), [Trees HTTP API](docs/TREES_HTTP_API.md), [Persons HTTP API](docs/PERSONS_HTTP_API.md), [Relationships and graph API](docs/RELATIONSHIPS_HTTP_API.md), [Family unions API](docs/UNIONS_HTTP_API.md), [Media and private S3 API](docs/MEDIA_HTTP_API.md), [Export HTTP API](docs/EXPORT_HTTP_API.md), [GEDCOM 7 export](docs/GEDCOM_EXPORT.md), [восстановление ZIP backup](docs/BACKUP_RESTORE.md), [PostgreSQL worker](docs/WORKER.md).
+Канонические документы: [концепция](docs/PROJECT_CONCEPT.md), [backend roadmap](docs/BACKEND_ROADMAP.md), [Trees HTTP API](docs/TREES_HTTP_API.md), [Persons HTTP API](docs/PERSONS_HTTP_API.md), [Relationships and graph API](docs/RELATIONSHIPS_HTTP_API.md), [Family unions API](docs/UNIONS_HTTP_API.md), [Media and private S3 API](docs/MEDIA_HTTP_API.md), [Export HTTP API](docs/EXPORT_HTTP_API.md), [GEDCOM 7 export](docs/GEDCOM_EXPORT.md), [GEDZIP 7 export](docs/GEDZIP_EXPORT.md), [восстановление ZIP backup](docs/BACKUP_RESTORE.md), [PostgreSQL worker](docs/WORKER.md).
 
 ## Локальный запуск
 
@@ -21,7 +21,7 @@ go run ./cmd/family_tree_app
 go run ./cmd/worker
 ```
 
-`complete` атомарно создаёт задание обработки медиа. Только worker переводит файл в `ready`, проверив фактический SHA-256, magic bytes и декодирование изображения. Worker также создаёт JSON/ZIP backup, визуальные PDF/PNG/SVG и GEDCOM 7 экспорты, а затем удаляет просроченные результаты, поэтому для полного API должны работать оба процесса.
+`complete` атомарно создаёт задание обработки медиа. Только worker переводит файл в `ready`, проверив фактический SHA-256, magic bytes и декодирование изображения. Worker также создаёт JSON/ZIP backup, визуальные PDF/PNG/SVG, GEDCOM 7 и GEDZIP 7 экспорты, а затем удаляет просроченные результаты, поэтому для полного API должны работать оба процесса.
 
 Identity Service должен быть запущен на адресе из `IDENTITY_GRPC_ADDR`. Переменные окружения и безопасные development defaults перечислены в `.env.example`.
 

@@ -4,7 +4,7 @@
 
 ## Граница данных
 
-Экспорт является переносимым представлением генеалогического графа, а не полной резервной копией. В него входят только активные `Person`, `PersonName`, `ParentChildRelation`, `FamilyUnion` и `UnionMember`. Soft-deleted данные, пользователи и memberships, audit log, media metadata, S3 object keys и бинарные файлы исключаются. Для полного восстановления используется `zip_backup`; для GEDCOM с файлами следующим форматом roadmap является GEDZIP.
+Экспорт является переносимым представлением генеалогического графа, а не полной резервной копией. В него входят только активные `Person`, `PersonName`, `ParentChildRelation`, `FamilyUnion` и `UnionMember`. Soft-deleted данные, пользователи и memberships, audit log, media metadata, S3 object keys и бинарные файлы исключаются. Для полного восстановления используется `zip_backup`; для переносимого GEDCOM вместе с файлами используется `gedzip`.
 
 ## Mapping
 

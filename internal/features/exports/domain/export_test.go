@@ -54,6 +54,19 @@ func TestGEDCOMExportFormatAndFilename(t *testing.T) {
 	}
 }
 
+func TestGEDZIPExportFormatAndFilename(t *testing.T) {
+	t.Parallel()
+	export, err := New(uuid.New(), uuid.New(), uuid.New(), CreateValues{
+		ClientRequestID: uuid.New(), Format: FormatGEDZIP,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filename := ResultFilename(export); !strings.HasSuffix(filename, ".gdz") {
+		t.Fatalf("filename = %q", filename)
+	}
+}
+
 func TestNewZIPExportUsesArchiveFilename(t *testing.T) {
 	t.Parallel()
 	export, err := New(uuid.New(), uuid.New(), uuid.New(), CreateValues{

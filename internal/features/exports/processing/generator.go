@@ -112,6 +112,9 @@ func (generator *Generator) Handle(ctx context.Context, job jobs.Job) error {
 		if err == nil && int64(len(body)) > generator.maxArchiveBytes {
 			err = domain.ErrExportResultTooLarge
 		}
+	case domain.FormatGEDZIP:
+		body, err = buildGEDZIP(ctx, export, snapshot, generator.objectStore, generator.maxArchiveBytes)
+		mimeType = gedzipMIMEType
 	default:
 		err = domain.ErrInvalidExport
 	}
@@ -185,6 +188,8 @@ func ResultObjectKey(treeID uuid.UUID, exportID uuid.UUID, format string, checks
 		filename = fmt.Sprintf("tree-%s.%s", checksum, format)
 	case domain.FormatGEDCOM:
 		filename = fmt.Sprintf("tree-%s.ged", checksum)
+	case domain.FormatGEDZIP:
+		filename = fmt.Sprintf("tree-%s.gdz", checksum)
 	default:
 		filename = fmt.Sprintf("manifest-%s.json", checksum)
 	}

@@ -1,6 +1,6 @@
 # PostgreSQL-backed worker
 
-Статус: реализованный контракт Этапа 9, JSON/ZIP backup, проверяемый offline restore, визуальный PDF/PNG/SVG и GEDCOM 7 export Этапа 10. Worker запускается отдельным процессом `go run ./cmd/worker`, но использует те же PostgreSQL и приватный S3 bucket, что и Family API.
+Статус: реализованный контракт Этапа 9 и все форматы Этапа 10: JSON/ZIP backup, проверяемый offline restore, визуальный PDF/PNG/SVG, GEDCOM 7 и GEDZIP 7. Worker запускается отдельным процессом `go run ./cmd/worker`, но использует те же PostgreSQL и приватный S3 bucket, что и Family API.
 
 ## Гарантии очереди
 
@@ -59,6 +59,8 @@ Handler идемпотентно выполняет:
 `pdf`, `png` и `svg` используют один детерминированный layout активного графа: preferred names, parent-child relations и family unions. Партнёры выравниваются по поколению, а soft-deleted записи исключаются. PDF содержит embedded Unicode fonts, SVG не загружает внешние ресурсы, PNG кодируется worker-ом напрямую. Превышение `EXPORT_MAX_VISUAL_NODES`, `EXPORT_MAX_VISUAL_PIXELS` или общего byte limit завершает export с `visual_too_large` без бессмысленного retry.
 
 `gedcom` преобразует активный граф в детерминированный FamilySearch GEDCOM 7.0. Writer формирует UTF-8 BOM и CRLF, экранирует leading `@`, переносит многострочный текст через `CONT`, создаёт взаимные `FAM`/`INDI` pointers и сохраняет тип родительства через `PEDI`. Результат хранится как `tree-{sha256}.ged` с зарегистрированным MIME `text/vnd.familysearch.gedcom`; общий byte limit завершает слишком большой результат кодом `result_too_large` без retry.
+
+`gedzip` вызывает тот же writer с multimedia mapping и собирает стандартный GEDZIP 7: обязательный `gedcom.ged` плюс одна ZIP entry на каждый локальный `FILE`/`TRAN`. Originals и variants скачиваются из private S3 только по snapshot metadata, затем повторно проверяются по фактическому размеру и SHA-256. UUID-based paths исключают traversal, пользовательские filenames не становятся entry names. Результат `tree-{sha256}.gdz` имеет MIME `application/vnd.familysearch.gedcom+zip`; превышение `EXPORT_MAX_ARCHIVE_BYTES` завершается кодом `archive_too_large`.
 
 Повторная обработка безопасна. После исчерпания retry доменное задание становится `failed`; удалённое во время генерации задание не может снова стать `completed`, а поздно загруженный объект удаляется.
 

@@ -70,7 +70,7 @@ func TestRenderProducesDeterministicGEDCOM7Graph(t *testing.T) {
 	text := string(first)
 	for _, expected := range []string{
 		"\ufeff0 HEAD\r\n1 GEDC\r\n2 VERS 7.0\r\n",
-		"1 DATE 22 AUG 2026\r\n2 TIME 14:05:06\r\n",
+		"1 DATE 22 AUG 2026\r\n2 TIME 14:05:06Z\r\n",
 		"1 NAME Пётр Иванович /Волконский/\r\n2 GIVN Пётр Иванович\r\n2 SURN Волконский\r\n",
 		"1 NAME Петя\r\n2 TYPE AKA\r\n",
 		"1 NOTE Biography:\r\n2 CONT Первая строка\r\n2 CONT @@вторая\r\n",
@@ -90,6 +90,49 @@ func TestRenderProducesDeterministicGEDCOM7Graph(t *testing.T) {
 		t.Fatalf("deleted or prohibited data leaked into GEDCOM:\n%s", text)
 	}
 	assertReciprocalFamilyPointers(t, first)
+}
+
+func TestRenderWithMediaCreatesGEDZIPMultimediaRecords(t *testing.T) {
+	t.Parallel()
+	personID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	mediaID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+	deletedMediaID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+	deletedAt := time.Date(2026, time.August, 22, 0, 0, 0, 0, time.UTC)
+	value := manifest.Manifest{
+		Persons: []manifest.Person{{ID: personID, Sex: "unknown", PrimaryMediaID: &mediaID}},
+		MediaAssets: []manifest.MediaAsset{
+			{ID: mediaID, Kind: "photo", OriginalFilename: "portrait.jpg", MIMEType: "image/jpeg", Caption: "Портрет", Description: "Семейный архив"},
+			{ID: deletedMediaID, Kind: "document", OriginalFilename: "deleted.pdf", MIMEType: "application/pdf", DeletedAt: &deletedAt},
+		},
+		PersonMedia: []manifest.PersonMediaAttachment{{
+			PersonID: personID, MediaID: mediaID, Role: "profile", SortOrder: 1,
+		}},
+	}
+	body, err := RenderWithMedia(value, []MediaFile{
+		{MediaID: mediaID, Path: "media/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/original.jpg", MIMEType: "image/jpeg"},
+		{MediaID: mediaID, VariantKind: "preview", Path: "media/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/variants/preview.jpg", MIMEType: "image/jpeg"},
+		{MediaID: deletedMediaID, Path: "media/deleted/original.pdf", MIMEType: "application/pdf"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	mediaXRef := "O" + strings.ToUpper(strings.ReplaceAll(mediaID.String(), "-", ""))
+	for _, expected := range []string{
+		"1 OBJE @" + mediaXRef + "@\r\n2 TITL Портрет\r\n",
+		"0 @" + mediaXRef + "@ OBJE\r\n1 RESN CONFIDENTIAL\r\n",
+		"1 FILE media/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/original.jpg\r\n2 FORM image/jpeg\r\n3 MEDI PHOTO\r\n",
+		"2 TITL Портрет\r\n2 TRAN media/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/variants/preview.jpg\r\n3 FORM image/jpeg\r\n",
+		"1 NOTE Семейный архив\r\n",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("missing multimedia fragment %q\n%s", expected, text)
+		}
+	}
+	if strings.Count(text, "1 OBJE @"+mediaXRef+"@") != 1 || strings.Contains(text, "media/deleted") {
+		t.Fatalf("unexpected multimedia links:\n%s", text)
+	}
+	assertValidDatasetShape(t, body)
 }
 
 func TestRenderSplitsUnionWithMoreThanTwoMembers(t *testing.T) {
