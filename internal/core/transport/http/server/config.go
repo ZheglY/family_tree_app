@@ -7,7 +7,9 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
-/* Конфиг для создания сервера
+/*
+	Конфиг для создания сервера
+
 Addr - адрес
 ShutDownTimeout - ?
 */

@@ -36,11 +36,14 @@ func NewAPIVersionRouter(
 Здесь конечным handler является не GetHealth, а весь APIVersionRouter.
 То есть обёртка мидлварь применяется ко всем маршрутам этой версии:
 middleware API v1
-    ↓
+
+	↓
+
 APIVersionRouter v1
-    ├── GET /health
-    ├── GET /users
-    └── POST /users
+
+	├── GET /health
+	├── GET /users
+	└── POST /users
 */
 func (r *APIVersionRouter) RegisterRoutes(routes ...Route) {
 	for _, route := range routes {

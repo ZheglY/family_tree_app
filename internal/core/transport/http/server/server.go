@@ -10,7 +10,9 @@ import (
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
 )
 
-/* Структура сервера
+/*
+	Структура сервера
+
 mux *http.ServeMux -
 Config - конфиг с указанием порта и SHUTDOWN
 */

@@ -1,0 +1,1060 @@
+openapi: 3.1.1
+info:
+  title: Family Tree API
+  version: 1.0.0
+  description: |
+    HTTP contract for the Family Tree modular monolith. Family data is private by
+    default. All tree-owned resources require an active tree membership in addition
+    to the Bearer access token.
+servers:
+  - url: /
+tags:
+  - name: Health
+  - name: Auth
+  - name: Account
+  - name: Trees
+  - name: Persons
+  - name: Relationships
+  - name: Unions
+  - name: Media
+  - name: Exports
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      operationId: getLiveness
+      summary: Check process liveness
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+        '503': { $ref: '#/components/responses/Health' }
+  /health/ready:
+    get:
+      tags: [Health]
+      operationId: getReadiness
+      summary: Check PostgreSQL readiness
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+        '503': { $ref: '#/components/responses/Error' }
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      operationId: registerUser
+      summary: Register an account
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/Register' }
+      responses:
+        '201': { $ref: '#/components/responses/JSONCreated' }
+        '409': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/auth/verify-email:
+    post:
+      tags: [Auth]
+      operationId: verifyEmail
+      summary: Verify an email address
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/Token' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Create an access and refresh session
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/Login' }
+      responses:
+        '200':
+          $ref: '#/components/responses/Session'
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshSession
+      summary: Rotate the refresh token and issue a new access token
+      security:
+        - refreshCookie: []
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the current refresh session
+      security:
+        - refreshCookie: []
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/auth/logout-all:
+    post:
+      tags: [Auth]
+      operationId: logoutAll
+      summary: Revoke all account sessions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      operationId: forgotPassword
+      summary: Request password recovery without account enumeration
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/ForgotPassword' }
+      responses:
+        '202': { $ref: '#/components/responses/Accepted' }
+        '429': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Reset a password with a one-time token
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/ResetPassword' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/v1/users/me:
+    get:
+      tags: [Account]
+      operationId: getCurrentUser
+      summary: Get the current account
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/users/me/sessions:
+    get:
+      tags: [Account]
+      operationId: listSessions
+      summary: List active account sessions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/users/me/sessions/{session_id}:
+    parameters:
+      - $ref: '#/components/parameters/SessionID'
+    delete:
+      tags: [Account]
+      operationId: revokeSession
+      summary: Revoke an account session
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/users/me/change-password:
+    post:
+      tags: [Account]
+      operationId: changePassword
+      summary: Change the password and revoke sessions
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/ChangePassword' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/v1/trees:
+    post:
+      tags: [Trees]
+      operationId: createTree
+      summary: Create a family tree with the caller as Owner
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/CreateTree' }
+      responses:
+        '201': { $ref: '#/components/responses/JSONCreated' }
+        default: { $ref: '#/components/responses/Error' }
+    get:
+      tags: [Trees]
+      operationId: listTrees
+      summary: List trees visible to the caller
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+    get:
+      tags: [Trees]
+      operationId: getTree
+      summary: Get a family tree
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Trees]
+      operationId: updateTree
+      summary: Update a family tree with optimistic locking
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/UpdateTree' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Trees]
+      operationId: deleteTree
+      summary: Soft-delete a family tree
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/Version' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+    post:
+      tags: [Trees]
+      operationId: restoreTree
+      summary: Restore a soft-deleted family tree
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/Version' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/v1/trees/{tree_id}/persons:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+    post:
+      tags: [Persons]
+      operationId: createPerson
+      summary: Create a person with a preferred name
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/CreatePerson' }
+      responses:
+        '201': { $ref: '#/components/responses/JSONCreated' }
+        default: { $ref: '#/components/responses/Error' }
+    get:
+      tags: [Persons]
+      operationId: listPersons
+      summary: Search and paginate people in a tree
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: query, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: life_status, in: query, schema: { $ref: '#/components/schemas/LifeStatus' } }
+        - { name: has_media, in: query, schema: { type: boolean } }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/persons/{person_id}:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/PersonID'
+    get:
+      tags: [Persons]
+      operationId: getPerson
+      summary: Get a person
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Persons]
+      operationId: updatePerson
+      summary: Update a person with optimistic locking
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/UpdatePerson' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Persons]
+      operationId: deletePerson
+      summary: Soft-delete a person
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/Version' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/persons/{person_id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/PersonID'
+    post:
+      tags: [Persons]
+      operationId: restorePerson
+      summary: Restore a soft-deleted person
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/Version' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/v1/trees/{tree_id}/parent-child-relations:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+    post:
+      tags: [Relationships]
+      operationId: createParentChildRelation
+      summary: Create a typed parent-child relation
+      description: The operation rejects self-relations, duplicates and ancestry cycles.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/CreateRelation' }
+      responses:
+        '201': { $ref: '#/components/responses/JSONCreated' }
+        '422': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/parent-child-relations/{relation_id}:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/RelationID'
+    get:
+      tags: [Relationships]
+      operationId: getParentChildRelation
+      summary: Get a parent-child relation
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Relationships]
+      operationId: updateParentChildRelation
+      summary: Update a parent-child relation
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/UpdateRelation' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Relationships]
+      operationId: deleteParentChildRelation
+      summary: Soft-delete a parent-child relation
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/Version' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/graph:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+    get:
+      tags: [Relationships]
+      operationId: getFamilyGraph
+      summary: Read a bounded family graph around one person
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: center_person_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: ancestors_depth
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 6, default: 2 }
+        - name: descendants_depth
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 6, default: 2 }
+        - name: include_partners
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        '422': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/v1/trees/{tree_id}/unions:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+    post:
+      tags: [Unions]
+      operationId: createUnion
+      summary: Create a family union with initial members
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/CreateUnion' }
+      responses:
+        '201': { $ref: '#/components/responses/JSONCreated' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/unions/{union_id}:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/UnionID'
+    get:
+      tags: [Unions]
+      operationId: getUnion
+      summary: Get a family union and its members
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Unions]
+      operationId: updateUnion
+      summary: Update a family union
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/UpdateUnion' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Unions]
+      operationId: deleteUnion
+      summary: Soft-delete a family union
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/Version' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/unions/{union_id}/members:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/UnionID'
+    post:
+      tags: [Unions]
+      operationId: addUnionMember
+      summary: Add a person to a family union
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/UnionMember' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/unions/{union_id}/members/{person_id}:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/UnionID'
+      - $ref: '#/components/parameters/PersonID'
+    delete:
+      tags: [Unions]
+      operationId: removeUnionMember
+      summary: Remove a person from a family union
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/v1/trees/{tree_id}/media/upload-intents:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+    post:
+      tags: [Media]
+      operationId: createMediaUploadIntent
+      summary: Create an idempotent private S3 upload intent
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/UploadIntent' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        '201': { $ref: '#/components/responses/JSONCreated' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/media:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+    get:
+      tags: [Media]
+      operationId: listMedia
+      summary: List private media metadata and short-lived downloads
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: kind
+          in: query
+          schema: { $ref: '#/components/schemas/MediaKind' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/MediaStatus' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/media/{media_id}:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/MediaID'
+    get:
+      tags: [Media]
+      operationId: getMedia
+      summary: Get private media metadata and downloads
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Media]
+      operationId: updateMedia
+      summary: Update media caption and description
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/UpdateMedia' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Media]
+      operationId: deleteMedia
+      summary: Soft-delete media metadata
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/Version' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/media/{media_id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/MediaID'
+    post:
+      tags: [Media]
+      operationId: completeMediaUpload
+      summary: Verify S3 metadata and enqueue media processing
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/persons/{person_id}/media:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/PersonID'
+    post:
+      tags: [Media]
+      operationId: attachMediaToPerson
+      summary: Attach ready media to a person
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/AttachMedia' }
+      responses:
+        '201': { $ref: '#/components/responses/JSONCreated' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/persons/{person_id}/media/{media_id}:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/PersonID'
+      - $ref: '#/components/parameters/MediaID'
+    delete:
+      tags: [Media]
+      operationId: detachMediaFromPerson
+      summary: Detach media from a person
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/persons/{person_id}/primary-media:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/PersonID'
+    put:
+      tags: [Media]
+      operationId: setPersonPrimaryMedia
+      summary: Select the person's primary photo
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/PrimaryMedia' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/v1/trees/{tree_id}/exports:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+    post:
+      tags: [Exports]
+      operationId: createExport
+      summary: Queue an idempotent private tree export
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/CreateExport' }
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        '201': { $ref: '#/components/responses/JSONCreated' }
+        default: { $ref: '#/components/responses/Error' }
+    get:
+      tags: [Exports]
+      operationId: listExports
+      summary: List tree exports
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/exports/{export_id}:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/ExportID'
+    get:
+      tags: [Exports]
+      operationId: getExport
+      summary: Get export status and metadata
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Exports]
+      operationId: deleteExport
+      summary: Delete a private export result
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/trees/{tree_id}/exports/{export_id}/download:
+    parameters:
+      - $ref: '#/components/parameters/TreeID'
+      - $ref: '#/components/parameters/ExportID'
+    get:
+      tags: [Exports]
+      operationId: prepareExportDownload
+      summary: Create a short-lived private export download
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/JSONOK' }
+        default: { $ref: '#/components/responses/Error' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived Ed25519 access token issued by the Identity Service.
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: family_tree_refresh
+      description: HttpOnly refresh cookie; the configured name may differ by deployment.
+
+  parameters:
+    TreeID:
+      name: tree_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PersonID:
+      name: person_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RelationID:
+      name: relation_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UnionID:
+      name: union_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MediaID:
+      name: media_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ExportID:
+      name: export_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionID:
+      name: session_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  requestBodies:
+    Register:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RegisterRequest' }
+    Token:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TokenRequest' }
+    Login:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LoginRequest' }
+    ForgotPassword:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
+    ResetPassword:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+    ChangePassword:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+    Version:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VersionRequest' }
+    CreateTree:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CreateTreeRequest' }
+    UpdateTree:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UpdateTreeRequest' }
+    CreatePerson:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CreatePersonRequest' }
+    UpdatePerson:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UpdatePersonRequest' }
+    CreateRelation:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CreateRelationRequest' }
+    UpdateRelation:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UpdateRelationRequest' }
+    CreateUnion:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CreateUnionRequest' }
+    UpdateUnion:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UpdateUnionRequest' }
+    UnionMember:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UnionMemberRequest' }
+    UploadIntent:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UploadIntentRequest' }
+    UpdateMedia:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UpdateMediaRequest' }
+    AttachMedia:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AttachMediaRequest' }
+    PrimaryMedia:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PrimaryMediaRequest' }
+    CreateExport:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CreateExportRequest' }
+
+  responses:
+    Health:
+      description: Health state
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [response]
+            properties:
+              response: { type: string, const: OK }
+    JSONOK:
+      description: Successful JSON response
+      content:
+        application/json:
+          schema: { type: object }
+    JSONCreated:
+      description: Resource created
+      content:
+        application/json:
+          schema: { type: object }
+    Session:
+      description: Session created or rotated
+      headers:
+        Set-Cookie:
+          description: Rotated HttpOnly refresh cookie.
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SessionResponse' }
+    Accepted:
+      description: Request accepted; response body is empty
+    NoContent:
+      description: Operation completed; response body is empty
+    Error:
+      description: Error envelope
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  schemas:
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, display_name]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        password: { type: string, format: password, minLength: 8, maxLength: 128 }
+        display_name: { type: string, minLength: 1, maxLength: 120 }
+    TokenRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token: { type: string, minLength: 1 }
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        password: { type: string, format: password, minLength: 1, maxLength: 128 }
+    ForgotPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [token, new_password]
+      properties:
+        token: { type: string, minLength: 1 }
+        new_password: { type: string, format: password, minLength: 8, maxLength: 128 }
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string, format: password, minLength: 1, maxLength: 128 }
+        new_password: { type: string, format: password, minLength: 8, maxLength: 128 }
+    VersionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+    CreateTreeRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 150 }
+        description: { type: string, maxLength: 5000 }
+        locale: { type: string, maxLength: 35 }
+        timezone: { type: string, maxLength: 100 }
+    UpdateTreeRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1, maxLength: 150 }
+        description: { type: string, maxLength: 5000 }
+        locale: { type: string, maxLength: 35 }
+        timezone: { type: string, maxLength: 100 }
+    PersonNameRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        given_name: { type: string, maxLength: 150 }
+        patronymic: { type: string, maxLength: 150 }
+        family_name: { type: string, maxLength: 150 }
+        prefix: { type: string, maxLength: 50 }
+        suffix: { type: string, maxLength: 50 }
+        language_code: { type: string, maxLength: 35 }
+      anyOf:
+        - required: [given_name]
+        - required: [family_name]
+    CreatePersonRequest:
+      type: object
+      additionalProperties: false
+      required: [preferred_name]
+      properties:
+        sex: { $ref: '#/components/schemas/Sex' }
+        life_status: { $ref: '#/components/schemas/LifeStatus' }
+        biography: { type: string, maxLength: 50000 }
+        notes: { type: string, maxLength: 20000 }
+        preferred_name: { $ref: '#/components/schemas/PersonNameRequest' }
+    UpdatePersonRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+        sex: { $ref: '#/components/schemas/Sex' }
+        life_status: { $ref: '#/components/schemas/LifeStatus' }
+        biography: { type: string, maxLength: 50000 }
+        notes: { type: string, maxLength: 20000 }
+        preferred_name: { $ref: '#/components/schemas/PersonNameRequest' }
+    CreateRelationRequest:
+      type: object
+      additionalProperties: false
+      required: [parent_person_id, child_person_id]
+      properties:
+        parent_person_id: { type: string, format: uuid }
+        child_person_id: { type: string, format: uuid }
+        relation_type: { $ref: '#/components/schemas/RelationType' }
+        confidence: { $ref: '#/components/schemas/Confidence' }
+        note: { type: string, maxLength: 5000 }
+    UpdateRelationRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+        relation_type: { $ref: '#/components/schemas/RelationType' }
+        confidence: { $ref: '#/components/schemas/Confidence' }
+        note: { type: string, maxLength: 5000 }
+    UnionMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [person_id]
+      properties:
+        person_id: { type: string, format: uuid }
+        role: { type: string, maxLength: 50 }
+    CreateUnionRequest:
+      type: object
+      additionalProperties: false
+      required: [members]
+      properties:
+        type: { $ref: '#/components/schemas/UnionType' }
+        end_reason: { type: string, maxLength: 500 }
+        note: { type: string, maxLength: 5000 }
+        members:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items: { $ref: '#/components/schemas/UnionMemberRequest' }
+    UpdateUnionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+        type: { $ref: '#/components/schemas/UnionType' }
+        end_reason: { type: string, maxLength: 500 }
+        note: { type: string, maxLength: 5000 }
+    UploadIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [client_request_id, kind, original_filename, mime_type, size_bytes, checksum_sha256]
+      properties:
+        client_request_id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/MediaKind' }
+        original_filename: { type: string, minLength: 1, maxLength: 255 }
+        mime_type: { type: string, enum: [image/jpeg, image/png, image/webp, application/pdf] }
+        size_bytes: { type: integer, minimum: 1 }
+        checksum_sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+    UpdateMediaRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+        caption: { type: string, maxLength: 500 }
+        description: { type: string, maxLength: 5000 }
+    AttachMediaRequest:
+      type: object
+      additionalProperties: false
+      required: [media_id]
+      properties:
+        media_id: { type: string, format: uuid }
+        role: { type: string, enum: [profile, gallery, document, other] }
+        sort_order: { type: integer, minimum: 0 }
+    PrimaryMediaRequest:
+      type: object
+      additionalProperties: false
+      required: [media_id, person_version]
+      properties:
+        media_id: { type: string, format: uuid }
+        person_version: { type: integer, minimum: 1 }
+    CreateExportRequest:
+      type: object
+      additionalProperties: false
+      required: [client_request_id, format]
+      properties:
+        client_request_id: { type: string, format: uuid }
+        format:
+          type: string
+          enum: [json_backup, zip_backup, pdf, png, svg, gedcom, gedzip]
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, display_name, status]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        status: { type: string }
+    SessionResponse:
+      type: object
+      additionalProperties: false
+      required: [user, access_token, access_token_expires_at]
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        access_token: { type: string }
+        access_token_expires_at: { type: string, format: date-time }
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+              enum: [invalid_argument, unauthorized, forbidden, not_found, conflict, unprocessable_entity, too_many_requests, service_unavailable, internal_error]
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+            request_id: { type: string }
+    Sex:
+      type: string
+      enum: [male, female, unknown, not_specified]
+    LifeStatus:
+      type: string
+      enum: [alive, deceased, unknown]
+    RelationType:
+      type: string
+      enum: [biological, adoptive, step, foster, guardian, unknown]
+    Confidence:
+      type: string
+      enum: [unverified, probable, confirmed, disputed]
+    UnionType:
+      type: string
+      enum: [marriage, civil_union, partnership, engagement, unknown]
+    MediaKind:
+      type: string
+      enum: [photo, document, other]
+    MediaStatus:
+      type: string
+      enum: [pending, uploaded, processing, ready, rejected]

@@ -1,0 +1,96 @@
+name: Backend quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-and-race:
+    name: Static analysis and race tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Verify module files
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Verify formatting
+        run: |
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$unformatted" ]; then
+            echo "The following Go files are not formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: Lint GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Run static analysis
+        run: go vet ./...
+      - name: Run race detector
+        run: go test -race ./... -count=1 -timeout=240s
+
+  postgres-and-s3:
+    name: PostgreSQL and S3 integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: family_tree_test
+          POSTGRES_USER: family_tree
+          POSTGRES_PASSWORD: family_tree
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U family_tree -d family_tree_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Start S3-compatible MinIO
+        run: |
+          docker run --detach --name family-media-ci \
+            --publish 9000:9000 \
+            --env MINIO_ROOT_USER=family-tree \
+            --env MINIO_ROOT_PASSWORD=family-tree-secret \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:9000/minio/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs family-media-ci
+          exit 1
+      - name: Run complete test suite
+        env:
+          FAMILY_TEST_DATABASE_URL: postgres://family_tree:family_tree@localhost:5434/family_tree_test?sslmode=disable
+          S3_TEST_ENDPOINT: http://localhost:9000
+          S3_TEST_REGION: ru-central1
+          S3_TEST_BUCKET: family-tree-media-test
+          S3_TEST_ACCESS_KEY_ID: family-tree
+          S3_TEST_SECRET_ACCESS_KEY: family-tree-secret
+        run: go test ./... -count=1 -timeout=240s

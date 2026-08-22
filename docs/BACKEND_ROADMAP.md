@@ -753,6 +753,8 @@ JSON schema должна иметь собственную версию. Тех�
 
 ### Этап 11. Hardening и release
 
+Статус: в процессе с 22 августа 2026 года. Первый срез добавил OpenAPI 3.1.1 для всей зарегистрированной HTTP surface, автоматическую проверку route/security drift и GitHub Actions quality gates с `gofmt`, `go vet`, race detector, clean PostgreSQL и real S3-compatible MinIO integration suite.
+
 - OpenAPI как проверяемый контракт;
 - unit, repository integration и API end-to-end тесты;
 - race detector;
@@ -876,4 +878,4 @@ Family API ограничивает публичные auth-попытки по 
 
 Этап 10 завершён: реализованы `json_backup`, `zip_backup` schema v1, offline restore, визуальные `pdf`/`png`/`svg`, `gedcom` и `gedzip`. Создание export и job атомарно, worker формирует repeatable-read snapshot, сохраняет checksum и приватный S3 object, а API предоставляет tenant-scoped историю и короткоживущую ссылку только requester/Owner. ZIP backup содержит manifest, checksums и проверенные оригиналы/варианты `uploaded`/`processing`/`ready` media без раскрытия S3 keys. Restore валидирует schema, canonical paths, checksum set и связи, сохраняет UUID, транзакционно восстанавливает граф и компенсирует S3 uploads при ошибке. Визуальные форматы используют общий детерминированный generations layout, выравнивают партнёров и исключают soft-deleted записи; PDF встраивает Unicode font. GEDCOM 7 экспортирует активный граф со стабильными `INDI`/`FAM` identifiers, взаимными family pointers, типом родительства и безопасным многострочным UTF-8. GEDZIP дополняет его стандартными `OBJE/FILE/FORM`, проверенными S3 media и точным соответствием локальных путей ZIP entries. Clean PostgreSQL + real MinIO integration-тесты подтверждают restore, visual, GEDCOM и GEDZIP pipelines. Результат экспорта имеет TTL, ручное удаление и периодическую очистку; audit фиксирует создание, скачивание, удаление и восстановление.
 
-Следующий этап: Этап 11 hardening/release. Начать с проверяемого OpenAPI-контракта и CI quality gates, затем security/observability, backup drills и нагрузочное тестирование. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
+Этап 11 в процессе: проверяемая OpenAPI surface и CI quality gates завершены. Следующий малый вертикальный срез — типизированные success response schemas и security headers/CORS/CSRF, затем observability, backup drills, нагрузочное/E2E тестирование и staging release flow. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
