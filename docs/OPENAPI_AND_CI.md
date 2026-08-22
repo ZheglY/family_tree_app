@@ -9,10 +9,10 @@
 - публичные `/health/live` и `/health/ready`;
 - versioned API `/api/v1` для auth/account, trees, persons, relationships, graph, unions, media и exports;
 - Bearer JWT и refresh-cookie security schemes;
-- path/query параметры, JSON request bodies, успешные HTTP-статусы и единый error envelope;
+- path/query параметры, JSON request bodies, типизированные success responses и единый error envelope;
 - ограничения и enum текущей доменной модели, включая все семь export-форматов.
 
-Contract-тест `api/openapi_test.go` загружает документ без внешних `$ref`, выполняет структурную валидацию и сравнивает пары `method + path` с фактическими `Routes()` активных transport-модулей. Он также проверяет уникальные `operationId`, обязательные summary/tags/responses и соответствие Bearer security реально установленным route middleware. Поэтому добавление, удаление или изменение защищённости endpoint требует атомарно обновить OpenAPI.
+Contract-тест `api/openapi_test.go` загружает документ без внешних `$ref`, выполняет структурную валидацию и сравнивает пары `method + path` с фактическими `Routes()` активных transport-модулей. Он также проверяет уникальные `operationId`, обязательные summary/tags/responses, отсутствие нетипизированных success JSON objects и соответствие Bearer security реально установленным route middleware. Поэтому изменение маршрута, защищённости или response DTO требует атомарно обновить OpenAPI.
 
 Локальная проверка:
 
@@ -37,4 +37,4 @@ go test ./... -count=1 -timeout=240s
 go vet ./...
 ```
 
-Browser security perimeter описан отдельно в [`HTTP_SECURITY.md`](HTTP_SECURITY.md). Следующие hardening-срезы: типизировать все success response schemas вместо общих JSON object там, где это ещё не сделано; затем metrics/logging audit, backup drills, нагрузочные/E2E проверки и staging release flow.
+Browser security perimeter описан отдельно в [`HTTP_SECURITY.md`](HTTP_SECURITY.md). Все success response schemas типизированы по фактическим transport DTO. Следующие hardening-срезы: metrics/logging audit, backup drills, нагрузочные/E2E проверки и staging release flow.

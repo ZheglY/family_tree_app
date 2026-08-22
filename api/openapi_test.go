@@ -96,11 +96,33 @@ func documentedRoutes(t *testing.T, document *openapi3.T) map[string]routeContra
 			if previous, exists := operationIDs[operation.OperationID]; exists {
 				t.Errorf("duplicate operationId %q on %s and %s", operation.OperationID, previous, key)
 			}
+			assertTypedSuccessResponses(t, key, operation)
 			operationIDs[operation.OperationID] = key
 			result[key] = routeContract{bearerProtected: usesBearerSecurity(operation)}
 		}
 	}
 	return result
+}
+
+func assertTypedSuccessResponses(t *testing.T, route string, operation *openapi3.Operation) {
+	t.Helper()
+	for status, response := range operation.Responses.Map() {
+		if !strings.HasPrefix(status, "2") || response.Value == nil {
+			continue
+		}
+		mediaType := response.Value.Content.Get("application/json")
+		if mediaType == nil {
+			continue
+		}
+		if mediaType.Schema == nil || mediaType.Schema.Value == nil {
+			t.Errorf("%s response %s must define a JSON schema", route, status)
+			continue
+		}
+		schema := mediaType.Schema.Value
+		if schema.Type != nil && schema.Type.Is("object") && len(schema.Properties) == 0 {
+			t.Errorf("%s response %s uses an unconstrained JSON object", route, status)
+		}
+	}
 }
 
 func usesBearerSecurity(operation *openapi3.Operation) bool {
