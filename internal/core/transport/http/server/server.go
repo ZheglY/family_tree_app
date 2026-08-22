@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/observability"
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
 )
 
@@ -28,7 +29,7 @@ type HTTPServer struct {
 func (s *HTTPServer) RegisterRoutes(routes ...Route) {
 	for _, route := range routes {
 		pattern := fmt.Sprintf("%s %s", route.Method, route.Path)
-		s.mux.Handle(pattern, route.WithMiddleware())
+		s.mux.Handle(pattern, observability.TrackRoute(route.Path, route.WithMiddleware()))
 	}
 }
 

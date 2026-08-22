@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/ZheglY/family_tree_app/internal/core/observability"
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
 )
 
@@ -48,8 +49,8 @@ APIVersionRouter v1
 func (r *APIVersionRouter) RegisterRoutes(routes ...Route) {
 	for _, route := range routes {
 		pattern := fmt.Sprintf("%s %s", route.Method, route.Path)
-
-		r.Handle(pattern, route.WithMiddleware())
+		metricPattern := "/api/" + string(r.apiVersion) + route.Path
+		r.Handle(pattern, observability.TrackRoute(metricPattern, route.WithMiddleware()))
 	}
 }
 

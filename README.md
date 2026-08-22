@@ -2,7 +2,7 @@
 
 Backend многопользовательского сервиса семейных деревьев. Family API построен как модульный монолит на Go, использует отдельный gRPC Identity Service и собственную PostgreSQL для семейного домена.
 
-Канонические документы: [концепция](docs/PROJECT_CONCEPT.md), [backend roadmap](docs/BACKEND_ROADMAP.md), [OpenAPI и CI](docs/OPENAPI_AND_CI.md), [HTTP security](docs/HTTP_SECURITY.md), [Trees HTTP API](docs/TREES_HTTP_API.md), [Persons HTTP API](docs/PERSONS_HTTP_API.md), [Relationships and graph API](docs/RELATIONSHIPS_HTTP_API.md), [Family unions API](docs/UNIONS_HTTP_API.md), [Media and private S3 API](docs/MEDIA_HTTP_API.md), [Export HTTP API](docs/EXPORT_HTTP_API.md), [GEDCOM 7 export](docs/GEDCOM_EXPORT.md), [GEDZIP 7 export](docs/GEDZIP_EXPORT.md), [восстановление ZIP backup](docs/BACKUP_RESTORE.md), [PostgreSQL worker](docs/WORKER.md).
+Канонические документы: [концепция](docs/PROJECT_CONCEPT.md), [backend roadmap](docs/BACKEND_ROADMAP.md), [OpenAPI и CI](docs/OPENAPI_AND_CI.md), [HTTP security](docs/HTTP_SECURITY.md), [observability](docs/OBSERVABILITY.md), [Trees HTTP API](docs/TREES_HTTP_API.md), [Persons HTTP API](docs/PERSONS_HTTP_API.md), [Relationships and graph API](docs/RELATIONSHIPS_HTTP_API.md), [Family unions API](docs/UNIONS_HTTP_API.md), [Media and private S3 API](docs/MEDIA_HTTP_API.md), [Export HTTP API](docs/EXPORT_HTTP_API.md), [GEDCOM 7 export](docs/GEDCOM_EXPORT.md), [GEDZIP 7 export](docs/GEDZIP_EXPORT.md), [восстановление ZIP backup](docs/BACKUP_RESTORE.md), [PostgreSQL worker](docs/WORKER.md).
 
 ## Локальный запуск
 
@@ -29,6 +29,8 @@ Identity Service должен быть запущен на адресе из `ID
 
 - `GET /health/live` — процесс принимает запросы;
 - `GET /health/ready` — обязательные PostgreSQL и private S3 bucket доступны.
+
+Prometheus endpoints работают на отдельных внутренних listeners: Family API `http://127.0.0.1:9090/metrics`, worker `http://127.0.0.1:9091/metrics`. Конфигурация и политика label/log data описаны в [observability guide](docs/OBSERVABILITY.md).
 
 ## Миграции
 

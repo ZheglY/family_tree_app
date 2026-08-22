@@ -3,7 +3,6 @@ package response
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	apperrors "github.com/ZheglY/family_tree_app/internal/core/errors"
@@ -116,7 +115,13 @@ func (h *HTTPResponseHandler) ErrorResponse(err error, msg string) {
 		logFunc = h.log.Error
 	}
 
-	logFunc(msg, zap.Error(err))
+	if statusCode >= http.StatusInternalServerError {
+		logFunc(msg, zap.String("error_code", errorCode), zap.Error(err))
+	} else {
+		// Client errors may include user-provided values in wrapped messages.
+		// Record only the controlled classification and fixed handler message.
+		logFunc(msg, zap.String("error_code", errorCode))
+	}
 
 	if statusCode == http.StatusInternalServerError {
 		msg = "Internal server error"
@@ -125,11 +130,9 @@ func (h *HTTPResponseHandler) ErrorResponse(err error, msg string) {
 	h.errorResponse(statusCode, errorCode, msg)
 }
 
-func (h *HTTPResponseHandler) PanicResponse(p any, msg string) {
+func (h *HTTPResponseHandler) PanicResponse(_ any, msg string) {
 	statusCode := http.StatusInternalServerError
-	err := fmt.Errorf("unexpected panic: %v", p)
-
-	h.log.Error(msg, zap.Error(err))
+	h.log.Error(msg, zap.String("error_code", "internal_error"), zap.Stack("stack"))
 
 	h.errorResponse(statusCode, "internal_error", "Internal server error")
 }

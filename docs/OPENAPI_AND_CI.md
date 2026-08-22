@@ -37,4 +37,4 @@ go test ./... -count=1 -timeout=240s
 go vet ./...
 ```
 
-Browser security perimeter описан отдельно в [`HTTP_SECURITY.md`](HTTP_SECURITY.md). Все success response schemas типизированы по фактическим transport DTO. Следующие hardening-срезы: metrics/logging audit, backup drills, нагрузочные/E2E проверки и staging release flow.
+Browser security perimeter описан отдельно в [`HTTP_SECURITY.md`](HTTP_SECURITY.md), а метрики и logging audit — в [`OBSERVABILITY.md`](OBSERVABILITY.md). Все success response schemas типизированы по фактическим transport DTO. Следующие hardening-срезы: backup drills, нагрузочные/E2E проверки и staging release flow.

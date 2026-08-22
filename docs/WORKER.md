@@ -77,6 +77,7 @@ Handler идемпотентно выполняет:
 - `WORKER_LEASE_DURATION=30s`;
 - `WORKER_HEARTBEAT_INTERVAL=10s`;
 - `WORKER_RETRY_BASE_DELAY=2s`, `WORKER_RETRY_MAX_DELAY=15m`;
+- `WORKER_METRICS_ENABLED=true`, `WORKER_METRICS_ADDR=127.0.0.1:9091`;
 - `MEDIA_CLEANUP_INTERVAL=1h`;
 - `MEDIA_CLEANUP_PENDING_TTL=24h`;
 - `MEDIA_CLEANUP_DELETED_RETENTION=720h`;
@@ -89,3 +90,5 @@ Handler идемпотентно выполняет:
 - `EXPORT_MAX_VISUAL_PIXELS=32000000` (примерно 128 MiB RGBA до кодирования).
 
 Heartbeat должен быть чаще половины lease. Один процесс сейчас выполняет задания последовательно; горизонтальное масштабирование достигается запуском нескольких worker-процессов с разными `WORKER_ID`.
+
+Prometheus listener, queue/worker series и ограничения на label cardinality описаны в [`OBSERVABILITY.md`](OBSERVABILITY.md).

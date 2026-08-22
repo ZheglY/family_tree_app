@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/observability"
 	"github.com/ZheglY/family_tree_app/internal/core/requestid"
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/response"
 	"github.com/google/uuid"
@@ -81,7 +82,6 @@ func Logger(log *logger.Logger) Middleware {
 				// Изменяет вывод логов
 				l := log.With(
 					zap.String("request_id", requestID),
-					zap.String("url", r.URL.String()),
 				)
 
 				// Сохраняем логер в контекст
@@ -108,16 +108,13 @@ func Trace() Middleware {
 				responseWriter := response.NewResponseWriter(rw)
 
 				before := time.Now()
-				log.Debug(
-					">>> incoming HTTP request",
-					zap.String("http_method", r.Method),
-					zap.Time("time", before.UTC()),
-				)
 
 				next.ServeHTTP(responseWriter, r)
 
 				log.Debug(
-					"<<< done HTTP request",
+					"HTTP request completed",
+					zap.String("http_method", r.Method),
+					zap.String("http_route", observability.Route(r)),
 					zap.Int("status_code", responseWriter.GetStatusCode()),
 					zap.Duration("latency", time.Since(before)),
 				)
