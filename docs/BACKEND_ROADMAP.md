@@ -341,7 +341,7 @@ Refresh token хранится только в виде хеша. При обн�
 ### 3.17. ExportJob
 
 - `id`, `tree_id`, `requested_by`;
-- `format`: `json_backup`, `pdf`, `png`, `svg`, позднее `gedcom`, `gedzip`;
+- `format`: `json_backup`, `zip_backup`, `pdf`, `png`, `svg`, `gedcom`, `gedzip`;
 - `parameters jsonb`;
 - `status`: `queued`, `running`, `completed`, `failed`, `expired`;
 - `progress`, `result_object_key`, `error_code`;
@@ -739,7 +739,7 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 
 ### Этап 10. Export
 
-Статус: в процессе. Versioned JSON manifest, ZIP backup с файлами/checksums, проверяемый offline restore и визуальный PDF/PNG/SVG завершены 21 августа 2026 года. Backup и visual pipelines проверяются на чистой PostgreSQL schema и реальном S3-compatible MinIO; следующий формат — GEDCOM 7.
+Статус: завершён 22 августа 2026 года. Реализованы versioned JSON manifest, ZIP backup с файлами/checksums, проверяемый offline restore, визуальный PDF/PNG/SVG, GEDCOM 7 и GEDZIP 7. Backup, visual, GEDCOM и GEDZIP pipelines проверяются на чистой PostgreSQL schema и реальном S3-compatible MinIO.
 
 Порядок форматов:
 
@@ -752,6 +752,8 @@ Bucket должен быть приватным. PostgreSQL хранит `object
 JSON schema должна иметь собственную версию. Технический offline restore резервной копии готов и проверен на чистой БД. Публичный пользовательский import не добавлять без отдельного mapping/conflict-preview контракта и tenant-scoped авторизации.
 
 ### Этап 11. Hardening и release
+
+Статус: в процессе с 22 августа 2026 года. Первый срез добавил OpenAPI 3.1.1 для всей зарегистрированной HTTP surface, автоматическую проверку route/security drift и GitHub Actions quality gates с `gofmt`, `go vet`, race detector, clean PostgreSQL и real S3-compatible MinIO integration suite. Второй срез добавил общие security headers, exact allowlist credentialed CORS, validated preflight и CSRF origin/Referer/Fetch-Metadata verification для state-changing requests. Третий срез заменил общие success JSON objects типизированными схемами всех transport DTO и запретил их возврат contract-тестом. Четвёртый срез добавил отдельные Prometheus listeners, bounded-cardinality HTTP/PostgreSQL/job queue/worker metrics и JSON logging без raw URL, query, auth headers, bodies и пользовательских 4xx error values. Пятый срез добавил quiesced PostgreSQL custom dump и private S3 backup/restore drill с manifests, SHA-256/metadata verification, пустыми targets и выполнением на каждом CI run. Шестой срез закрепил CI budget для 12 конкурентных graph reads в дереве на 10 000 персон и расширил cross-service E2E проверками API/worker metrics и label privacy.
 
 - OpenAPI как проверяемый контракт;
 - unit, repository integration и API end-to-end тесты;
@@ -874,6 +876,6 @@ Family API ограничивает публичные auth-попытки по 
 
 Этап 9 завершён: отдельный `cmd/worker` использует PostgreSQL-backed очередь с `FOR UPDATE SKIP LOCKED`, lease/heartbeat, exponential retry, `dead` state и идемпотентными handlers. `media.process` проверяет фактический SHA-256, magic bytes и декодирование, создаёт thumbnail/preview и только затем открывает скачивание и привязки. `media.cleanup` безопасно резервирует просроченные pending и после retention удаляет originals/variants и metadata. Интеграционные тесты покрывают конкурирующий claim, потерю lease, retry/dead и реальный MinIO pipeline.
 
-Этап 10 в процессе: реализованы `json_backup`, `zip_backup` schema v1, offline restore и визуальные `pdf`/`png`/`svg`. Создание export и job атомарно, worker формирует repeatable-read snapshot, сохраняет checksum и приватный S3 object, а API предоставляет tenant-scoped историю и короткоживущую ссылку только requester/Owner. ZIP содержит manifest, checksums и проверенные оригиналы/варианты `uploaded`/`processing`/`ready` media без раскрытия S3 keys. Restore валидирует schema, canonical paths, checksum set и связи, сохраняет UUID, транзакционно восстанавливает граф и компенсирует S3 uploads при ошибке. Визуальные форматы используют общий детерминированный generations layout, выравнивают партнёров и исключают soft-deleted записи; PDF встраивает Unicode font. Clean PostgreSQL + real MinIO integration-тесты подтверждают restore и visual pipelines. Результат экспорта имеет TTL, ручное удаление и периодическую очистку; audit фиксирует создание, скачивание, удаление и восстановление.
+Этап 10 завершён: реализованы `json_backup`, `zip_backup` schema v1, offline restore, визуальные `pdf`/`png`/`svg`, `gedcom` и `gedzip`. Создание export и job атомарно, worker формирует repeatable-read snapshot, сохраняет checksum и приватный S3 object, а API предоставляет tenant-scoped историю и короткоживущую ссылку только requester/Owner. ZIP backup содержит manifest, checksums и проверенные оригиналы/варианты `uploaded`/`processing`/`ready` media без раскрытия S3 keys. Restore валидирует schema, canonical paths, checksum set и связи, сохраняет UUID, транзакционно восстанавливает граф и компенсирует S3 uploads при ошибке. Визуальные форматы используют общий детерминированный generations layout, выравнивают партнёров и исключают soft-deleted записи; PDF встраивает Unicode font. GEDCOM 7 экспортирует активный граф со стабильными `INDI`/`FAM` identifiers, взаимными family pointers, типом родительства и безопасным многострочным UTF-8. GEDZIP дополняет его стандартными `OBJE/FILE/FORM`, проверенными S3 media и точным соответствием локальных путей ZIP entries. Clean PostgreSQL + real MinIO integration-тесты подтверждают restore, visual, GEDCOM и GEDZIP pipelines. Результат экспорта имеет TTL, ручное удаление и периодическую очистку; audit фиксирует создание, скачивание, удаление и восстановление.
 
-Следующий малый вертикальный срез: post-MVP GEDCOM 7, затем GEDZIP и Этап 11 hardening/release. Production mailer и service-to-service аутентификацию завершить до публичного релиза.
+Этап 11 в процессе: проверяемая OpenAPI surface с типизированными success responses, CI quality gates, browser security perimeter, observability, PostgreSQL/S3 backup drills и large-graph/cross-service E2E gates завершены. Подготовлен platform-neutral staging/release foundation: digest-pinned non-root OCI image, container CI gate, hardened Compose template и release/rollback runbook. Остался реальный staging rollout с фиксацией smoke/load/restore evidence после выбора площадки и предоставления доступов. Production mailer и service-to-service аутентификацию завершить до публичного релиза.

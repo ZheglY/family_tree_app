@@ -88,6 +88,11 @@ if (Get-NetTCPConnection -LocalPort 50051 -State Listen -ErrorAction SilentlyCon
 if (Get-NetTCPConnection -LocalPort 18080 -State Listen -ErrorAction SilentlyContinue) {
     throw "Port 18080 is already in use"
 }
+foreach ($metricsPort in @(19090, 19091)) {
+    if (Get-NetTCPConnection -LocalPort $metricsPort -State Listen -ErrorAction SilentlyContinue) {
+        throw "Port $metricsPort is already in use"
+    }
+}
 try {
     $storageHealth = Invoke-WebRequest `
         -Method Get `
@@ -158,6 +163,8 @@ try {
     if (-not $identityReady) { throw "Identity service did not start" }
 
     $env:HTTP_ADDR = "127.0.0.1:18080"
+    $env:API_METRICS_ADDR = "127.0.0.1:19090"
+    $env:WORKER_METRICS_ADDR = "127.0.0.1:19091"
     $env:LOGGER_FOLDER = Join-Path $temporaryRoot "family-logs"
     $env:AUTH_REFRESH_COOKIE_SECURE = "false"
     $familyOutput = Join-Path $temporaryRoot "family.stdout.log"
@@ -202,6 +209,23 @@ try {
     Start-Sleep -Milliseconds 500
     if ($workerProcess.HasExited) {
         throw "Family worker did not start"
+    }
+    $metricsReady = $false
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        try {
+            $apiMetricsProbe = Invoke-WebRequest -Uri "http://127.0.0.1:19090/metrics"
+            $workerMetricsProbe = Invoke-WebRequest -Uri "http://127.0.0.1:19091/metrics"
+            if ($apiMetricsProbe.StatusCode -eq 200 -and $workerMetricsProbe.StatusCode -eq 200) {
+                $metricsReady = $true
+                break
+            }
+        } catch {
+            # Metrics listeners are still starting.
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not $metricsReady) {
+        throw "Family API or worker metrics listener did not start"
     }
 
     $email = "e2e-" + [guid]::NewGuid().ToString("N") + "@example.com"
@@ -1143,6 +1167,22 @@ try {
         throw "Login rate limit response did not include Retry-After"
     }
 
+    $finalAPIMetrics = (Invoke-WebRequest -Uri "http://127.0.0.1:19090/metrics").Content
+    $finalWorkerMetrics = (Invoke-WebRequest -Uri "http://127.0.0.1:19091/metrics").Content
+    if (-not $finalAPIMetrics.Contains('family_tree_http_requests_total') -or
+        -not $finalAPIMetrics.Contains('route="/api/v1/trees/{tree_id}/graph"')) {
+        throw "API metrics do not contain bounded route observations"
+    }
+    if ($finalAPIMetrics.Contains($treeID) -or
+        $finalAPIMetrics.Contains($personID) -or
+        $finalAPIMetrics.Contains($email)) {
+        throw "API metrics leaked a resource identifier or email"
+    }
+    if (-not $finalWorkerMetrics.Contains('family_tree_job_queue_jobs') -or
+        -not $finalWorkerMetrics.Contains('family_tree_worker_jobs_finished_total')) {
+        throw "Worker metrics do not contain queue and outcome observations"
+    }
+
     [pscustomobject]@{
         health = $health.response
         readiness = $ready.response
@@ -1177,6 +1217,8 @@ try {
         reused_reset_token = $reusedReset.StatusCode
         recovered_login = $recoveredLogin.StatusCode
         login_rate_limit = $rateLimitStatus
+        api_metrics = "bounded-route-labels"
+        worker_metrics = "queue-and-outcomes"
     }
 } catch {
     foreach ($logName in @(

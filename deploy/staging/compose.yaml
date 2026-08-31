@@ -1,0 +1,73 @@
+name: family-tree-staging
+
+x-backend: &backend
+  image: ${FAMILY_TREE_IMAGE:?Set FAMILY_TREE_IMAGE to an immutable image tag or digest}
+  env_file:
+    - ${STAGING_ENV_FILE:?Set STAGING_ENV_FILE to an absolute path outside the repository}
+  read_only: true
+  tmpfs:
+    - /tmp:mode=1777,size=64m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  stop_grace_period: 40s
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  migrate:
+    <<: *backend
+    entrypoint: ["/app/family-migrate"]
+    command: ["up"]
+    restart: "no"
+    environment:
+      LOGGER_FORMAT: json
+      LOGGER_FOLDER: /tmp/family-tree-logs
+
+  api:
+    <<: *backend
+    entrypoint: ["/app/family-api"]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      LOGGER_FORMAT: json
+      LOGGER_FOLDER: /tmp/family-tree-logs
+      HTTP_ADDR: :8080
+      HTTP_HSTS_MAX_AGE_SECONDS: "31536000"
+      AUTH_REFRESH_COOKIE_SECURE: "true"
+      IDENTITY_GRPC_TLS_ENABLED: "true"
+      API_METRICS_ENABLED: "true"
+      API_METRICS_ADDR: :9090
+    ports:
+      - "${FAMILY_TREE_BIND_ADDRESS:-127.0.0.1}:${FAMILY_TREE_HTTP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--output-document=/dev/null", "http://127.0.0.1:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+
+  worker:
+    <<: *backend
+    entrypoint: ["/app/family-worker"]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      LOGGER_FORMAT: json
+      LOGGER_FOLDER: /tmp/family-tree-logs
+      WORKER_METRICS_ENABLED: "true"
+      WORKER_METRICS_ADDR: :9091
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--output-document=/dev/null", "http://127.0.0.1:9091/metrics"]
+      interval: 15s
+      timeout: 3s
+      retries: 4
+      start_period: 20s

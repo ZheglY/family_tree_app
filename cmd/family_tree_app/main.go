@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/observability"
 	corepostgres "github.com/ZheglY/family_tree_app/internal/core/postgres"
 	s3storage "github.com/ZheglY/family_tree_app/internal/core/storage/s3"
 	"github.com/ZheglY/family_tree_app/internal/core/transport/http/middleware"
@@ -39,6 +40,7 @@ import (
 	unionservice "github.com/ZheglY/family_tree_app/internal/features/unions/service"
 	unionhttp "github.com/ZheglY/family_tree_app/internal/features/unions/transport"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -73,6 +75,18 @@ func main() {
 		panic(err)
 	}
 	defer database.Close()
+	metrics, err := observability.NewMetrics(database.Native())
+	if err != nil {
+		panic(fmt.Errorf("initialize application metrics: %w", err))
+	}
+	metricsConfig, err := observability.LoadConfig("API_METRICS", "127.0.0.1:9090")
+	if err != nil {
+		panic(err)
+	}
+	metricsServer, err := observability.NewServer(metricsConfig, metrics.Registry(), log)
+	if err != nil {
+		panic(err)
+	}
 	objectStorageConfig, err := s3storage.LoadConfig()
 	if err != nil {
 		panic(err)
@@ -180,12 +194,22 @@ func main() {
 	log.Debug("initializing HTTP server")
 	// создаем адаптер сервера
 	httpConfig := server.NewConfigMust()
+	browserSecurity, err := middleware.BrowserSecurity(middleware.BrowserSecurityConfig{
+		AllowedOrigins:    httpConfig.AllowedOrigins,
+		HSTSMaxAgeSeconds: httpConfig.HSTSMaxAgeSeconds,
+		CORSMaxAgeSeconds: httpConfig.CORSMaxAgeSeconds,
+	})
+	if err != nil {
+		panic(fmt.Errorf("initialize browser security middleware: %w", err))
+	}
 	httpServer := server.NewHTTPServer(
 		httpConfig,
 		log,
 		middleware.RequestID(),
 		middleware.Logger(log),
+		metrics.HTTPMiddleware(),
 		middleware.Recovery(),
+		browserSecurity,
 		middleware.BodyLimit(httpConfig.MaxBodyBytes),
 		middleware.Trace(),
 	)
@@ -215,7 +239,10 @@ func main() {
 	apiV1Router.RegisterRoutes(exportTransportHTTP.Routes()...)
 	httpServer.RegisterAPIRouters(apiV1Router)
 
-	if err := httpServer.Run(ctx); err != nil {
+	group, runContext := errgroup.WithContext(ctx)
+	group.Go(func() error { return httpServer.Run(runContext) })
+	group.Go(func() error { return metricsServer.Run(runContext) })
+	if err := group.Wait(); err != nil {
 		panic(err)
 	}
 }

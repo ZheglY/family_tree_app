@@ -12,6 +12,7 @@ import (
 	jobpostgres "github.com/ZheglY/family_tree_app/internal/core/jobs/postgres"
 	jobworker "github.com/ZheglY/family_tree_app/internal/core/jobs/worker"
 	"github.com/ZheglY/family_tree_app/internal/core/logger"
+	"github.com/ZheglY/family_tree_app/internal/core/observability"
 	corepostgres "github.com/ZheglY/family_tree_app/internal/core/postgres"
 	s3storage "github.com/ZheglY/family_tree_app/internal/core/storage/s3"
 	"github.com/ZheglY/family_tree_app/internal/features/exports/exportjob"
@@ -22,6 +23,7 @@ import (
 	mediapostgres "github.com/ZheglY/family_tree_app/internal/features/media/repository/postgres"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -48,6 +50,18 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer database.Close()
+	metrics, err := observability.NewMetrics(database.Native())
+	if err != nil {
+		return fmt.Errorf("initialize worker metrics: %w", err)
+	}
+	metricsConfig, err := observability.LoadConfig("WORKER_METRICS", "127.0.0.1:9091")
+	if err != nil {
+		return err
+	}
+	metricsServer, err := observability.NewServer(metricsConfig, metrics.Registry(), log)
+	if err != nil {
+		return err
+	}
 	objectStorageConfig, err := s3storage.LoadConfig()
 	if err != nil {
 		return err
@@ -92,6 +106,7 @@ func run(ctx context.Context) error {
 		},
 		workerConfig,
 		log,
+		metrics,
 	)
 	if err != nil {
 		return err
@@ -102,9 +117,12 @@ func run(ctx context.Context) error {
 	if err := enqueueExportCleanup(ctx, jobRepository, exportConfig, time.Now().UTC()); err != nil {
 		return err
 	}
-	go scheduleMediaCleanup(ctx, jobRepository, cleanupConfig, log)
-	go scheduleExportCleanup(ctx, jobRepository, exportConfig, log)
-	return runner.Run(ctx)
+	group, runContext := errgroup.WithContext(ctx)
+	go scheduleMediaCleanup(runContext, jobRepository, cleanupConfig, log)
+	go scheduleExportCleanup(runContext, jobRepository, exportConfig, log)
+	group.Go(func() error { return runner.Run(runContext) })
+	group.Go(func() error { return metricsServer.Run(runContext) })
+	return group.Wait()
 }
 
 func scheduleMediaCleanup(

@@ -82,8 +82,14 @@ func NewLogger(config LoggerConfig) (*Logger, error) {
 	// Переопределяется формат времени внутри каждой записи лога.
 	zapConfig.EncodeTime = zapcore.TimeEncoderOfLayout("2006-01-02T15-04-05.000000")
 
-	// Encoder преобразует данные logger в текст.
-	zapEncoder := zapcore.NewConsoleEncoder(zapConfig)
+	// JSON is the production default so collectors can parse stable fields.
+	// Console remains available for local interactive development.
+	var zapEncoder zapcore.Encoder
+	if config.Format == "console" {
+		zapEncoder = zapcore.NewConsoleEncoder(zapConfig)
+	} else {
+		zapEncoder = zapcore.NewJSONEncoder(zapConfig)
+	}
 
 	/*
 		Создание двух направлений записи. NewTee объединяет несколько logger core.
@@ -137,12 +143,11 @@ func FromContext(ctx context.Context) *Logger {
 
 При добавлении таких ключ - значений:
 request_id = abc-123
-url        = /api/v1/health
 
 При вызове логера - Info("health check started")
 
-Вывод:
-INFO health check started request_id=abc-123 url=/api/v1/health
+Вывод содержит структурированное поле request_id без raw URL, query string,
+заголовков авторизации и тела запроса.
 */
 func (l *Logger) With(field ...zap.Field) *Logger {
 	return &Logger{

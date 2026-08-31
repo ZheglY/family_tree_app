@@ -360,6 +360,174 @@ func TestGeneratorCreatesVisualFormats(t *testing.T) {
 	}
 }
 
+func TestGeneratorCreatesGEDCOM7(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.August, 22, 12, 0, 0, 0, time.UTC)
+	export, err := domain.New(uuid.New(), uuid.New(), uuid.New(), domain.CreateValues{
+		ClientRequestID: uuid.New(), Format: domain.FormatGEDCOM,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &processingRepositoryStub{export: export, snapshot: testVisualSnapshot(export, now)}
+	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
+	generator := NewGenerator(repository, objectStore, 24*time.Hour, 16*1024*1024, 20, 64*1024*1024)
+	generator.now = func() time.Time { return now }
+	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
+	if err := generator.Handle(context.Background(), jobs.Job{
+		Kind: exportjob.KindGenerate, Payload: payload, Attempts: 1, MaxAttempts: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stored, exists := objectStore.objects[repository.export.ResultObjectKey]
+	if !exists || !repository.completed || stored.ContentType != "text/vnd.familysearch.gedcom" ||
+		!strings.HasSuffix(stored.ObjectKey, ".ged") ||
+		!bytes.HasPrefix(stored.Body, []byte{0xEF, 0xBB, 0xBF}) ||
+		!bytes.Contains(stored.Body, []byte("2 VERS 7.0\r\n")) {
+		t.Fatalf("stored GEDCOM = %#v, export = %#v", stored, repository.export)
+	}
+}
+
+func TestGeneratorRejectsOversizedGEDCOM(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.August, 22, 12, 0, 0, 0, time.UTC)
+	export, _ := domain.New(uuid.New(), uuid.New(), uuid.New(), domain.CreateValues{
+		ClientRequestID: uuid.New(), Format: domain.FormatGEDCOM,
+	}, now)
+	repository := &processingRepositoryStub{export: export, snapshot: testVisualSnapshot(export, now)}
+	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
+	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
+	err := NewGenerator(repository, objectStore, time.Hour, 32, 20, 64*1024*1024).Handle(
+		context.Background(),
+		jobs.Job{Kind: exportjob.KindGenerate, Payload: payload, Attempts: 1, MaxAttempts: 5},
+	)
+	if err != nil || repository.failedCode != "result_too_large" || len(objectStore.objects) != 0 {
+		t.Fatalf("error = %v, failure code = %q, objects = %#v", err, repository.failedCode, objectStore.objects)
+	}
+}
+
+func TestGeneratorCreatesGEDZIPWithReferencedMedia(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.August, 22, 12, 0, 0, 0, time.UTC)
+	export, err := domain.New(uuid.New(), uuid.New(), uuid.New(), domain.CreateValues{
+		ClientRequestID: uuid.New(), Format: domain.FormatGEDZIP,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	personID := uuid.New()
+	mediaID := uuid.New()
+	originalBody := []byte("jpeg family portrait")
+	previewBody := []byte("jpeg preview")
+	originalDigest := sha256.Sum256(originalBody)
+	previewDigest := sha256.Sum256(previewBody)
+	originalChecksum := hex.EncodeToString(originalDigest[:])
+	previewChecksum := hex.EncodeToString(previewDigest[:])
+	originalSource := manifest.SourceFile{
+		MediaID: mediaID, ObjectKey: "source-original", SizeBytes: int64(len(originalBody)),
+		ChecksumSHA256: originalChecksum,
+	}
+	previewSource := manifest.SourceFile{
+		MediaID: mediaID, VariantKind: "preview", ObjectKey: "source-preview",
+		SizeBytes: int64(len(previewBody)), ChecksumSHA256: previewChecksum,
+	}
+	repository := &processingRepositoryStub{export: export, snapshot: manifest.Snapshot{
+		Manifest: manifest.Manifest{
+			Schema: manifest.Schema{Name: domain.ManifestSchemaName, Version: domain.ManifestSchemaVersion},
+			Export: manifest.ExportMetadata{
+				ID: export.ID, Format: export.Format, RequestedBy: export.RequestedBy, CreatedAt: now,
+			},
+			Tree:        manifest.Tree{ID: export.TreeID, Name: "Род Волконских", Locale: "ru-RU"},
+			Persons:     []manifest.Person{{ID: personID, Sex: "unknown", PrimaryMediaID: &mediaID}},
+			PersonNames: []manifest.PersonName{{ID: uuid.New(), PersonID: personID, FullText: "Анна Волконская", IsPreferred: true}},
+			MediaAssets: []manifest.MediaAsset{{
+				ID: mediaID, Kind: "photo", Status: "ready", OriginalFilename: "portrait.jpg",
+				MIMEType: "image/jpeg", SizeBytes: int64(len(originalBody)),
+				ChecksumSHA256: originalChecksum, Caption: "Портрет",
+			}},
+			MediaVariants: []manifest.MediaVariant{{
+				ID: uuid.New(), MediaID: mediaID, Kind: "preview", MIMEType: "image/jpeg",
+				SizeBytes: int64(len(previewBody)), ChecksumSHA256: previewChecksum,
+			}},
+			PersonMedia: []manifest.PersonMediaAttachment{{
+				PersonID: personID, MediaID: mediaID, Role: "profile", SortOrder: 0,
+			}},
+		},
+		Files: []manifest.SourceFile{previewSource, originalSource},
+	}}
+	objectStore := &processorObjectStoreStub{objects: map[string]storage.PutInput{
+		originalSource.ObjectKey: {ObjectKey: originalSource.ObjectKey, ContentType: "image/jpeg", ChecksumSHA256: originalChecksum, Body: originalBody},
+		previewSource.ObjectKey:  {ObjectKey: previewSource.ObjectKey, ContentType: "image/jpeg", ChecksumSHA256: previewChecksum, Body: previewBody},
+	}}
+	generator := NewGenerator(repository, objectStore, 24*time.Hour, 16*1024*1024, 20, 64*1024*1024)
+	generator.now = func() time.Time { return now }
+	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
+	if err := generator.Handle(context.Background(), jobs.Job{
+		Kind: exportjob.KindGenerate, Payload: payload, Attempts: 1, MaxAttempts: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stored, exists := objectStore.objects[repository.export.ResultObjectKey]
+	if !exists || !repository.completed || stored.ContentType != gedzipMIMEType ||
+		!strings.HasSuffix(stored.ObjectKey, ".gdz") {
+		t.Fatalf("stored GEDZIP = %#v, export = %#v", stored, repository.export)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(stored.Body), int64(len(stored.Body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := make(map[string][]byte)
+	for _, file := range reader.File {
+		opened, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(opened)
+		_ = opened.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries[file.Name] = body
+	}
+	originalPath := "media/" + mediaID.String() + "/original.jpg"
+	previewPath := "media/" + mediaID.String() + "/variants/preview.jpg"
+	gedcomBody := string(entries["gedcom.ged"])
+	if len(entries) != 3 || !bytes.Equal(entries[originalPath], originalBody) ||
+		!bytes.Equal(entries[previewPath], previewBody) ||
+		!strings.Contains(gedcomBody, "1 FILE "+originalPath+"\r\n2 FORM image/jpeg\r\n") ||
+		!strings.Contains(gedcomBody, "2 TRAN "+previewPath+"\r\n3 FORM image/jpeg\r\n") ||
+		!strings.Contains(gedcomBody, "1 OBJE @O"+strings.ToUpper(strings.ReplaceAll(mediaID.String(), "-", ""))+"@\r\n") {
+		t.Fatalf("GEDZIP entries = %#v\nGEDCOM:\n%s", entries, gedcomBody)
+	}
+}
+
+func TestGEDZIPRejectsUnsupportedMediaBeforeDownload(t *testing.T) {
+	t.Parallel()
+	mediaID := uuid.New()
+	export, _ := domain.New(uuid.New(), uuid.New(), uuid.New(), domain.CreateValues{
+		ClientRequestID: uuid.New(), Format: domain.FormatGEDZIP,
+	}, time.Now().UTC())
+	repository := &processingRepositoryStub{export: export, snapshot: manifest.Snapshot{
+		Manifest: manifest.Manifest{MediaAssets: []manifest.MediaAsset{{
+			ID: mediaID, Status: "ready", MIMEType: "application/octet-stream",
+		}}},
+		Files: []manifest.SourceFile{{
+			MediaID: mediaID, ObjectKey: "unsupported", SizeBytes: 10,
+			ChecksumSHA256: strings.Repeat("a", 64),
+		}},
+	}}
+	objectStore := &processorObjectStoreStub{objects: make(map[string]storage.PutInput)}
+	payload, _ := exportjob.Encode(exportjob.GeneratePayload{TreeID: export.TreeID, ExportID: export.ID})
+	err := NewGenerator(repository, objectStore, time.Hour, 16*1024*1024, 20, 64*1024*1024).Handle(
+		context.Background(),
+		jobs.Job{Kind: exportjob.KindGenerate, Payload: payload, Attempts: 5, MaxAttempts: 5},
+	)
+	if !errors.Is(err, domain.ErrExportSourceInvalid) || repository.failedCode != "generation_failed" ||
+		len(objectStore.objects) != 0 {
+		t.Fatalf("error = %v, failure code = %q, objects = %#v", err, repository.failedCode, objectStore.objects)
+	}
+}
+
 func TestGeneratorRejectsOversizedVisualTree(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
