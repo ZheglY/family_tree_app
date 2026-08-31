@@ -358,7 +358,7 @@ $targetListJSON = (Invoke-S3 @(
     "s3api", "list-objects-v2", "--bucket", $TargetBucket, "--max-items", "1", "--output", "json"
 )) -join [System.Environment]::NewLine
 $targetList = $targetListJSON | ConvertFrom-Json
-if (@($targetList.Contents).Count -gt 0) {
+if ($null -ne $targetList.Contents -and @($targetList.Contents).Count -gt 0) {
     throw "Target S3 bucket must be empty"
 }
 
