@@ -27,11 +27,12 @@ function Get-NativeToolPath {
         }
         return [System.IO.Path]::GetFullPath($candidate)
     }
-    $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue
+    $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
     if ($null -eq $command) {
         throw "$Name is required but was not found in PATH"
     }
-    return $command.Source
+    return $command.Path
 }
 
 function Invoke-PostgresTool {
