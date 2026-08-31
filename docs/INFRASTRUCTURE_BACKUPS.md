@@ -13,7 +13,8 @@ PostgreSQL сохраняется `pg_dump` 17 в custom format с `--no-owner -
 
 Требования:
 
-- `pg_dump`, `pg_restore` и `psql` версии 17 или новее;
+- `pg_dump`, `pg_restore` и `psql` версии 17 или новее, либо Docker на Linux и
+  образ PostgreSQL client той же major-версии через `-PostgresClientMode docker`;
 - AWS CLI v2, настроенный статическим/временным ключом с минимальными правами на исходный и drill buckets;
 - пустая целевая PostgreSQL database и пустой private S3 bucket;
 - остановленные Family API и worker либо другой подтверждённый maintenance barrier, исключающий запись;
@@ -47,6 +48,11 @@ Drill проверяет:
 - metadata, размер и повторно скачанный SHA-256 каждого восстановленного object.
 
 CI создаёт дерево и checksummed S3 object, выполняет migrations, dump, restore в новую database и копирование в отдельный MinIO bucket. Поэтому script и фактические версии `pg_dump`/`pg_restore`/S3 API проверяются на каждом push и pull request.
+
+GitHub Actions использует `postgres:17-alpine` как одноразовый client container,
+подключённый к host network runner. Это сохраняет совпадение major-версии server и
+client без зависимости от того, опубликован ли `postgresql-client-17` в APT-репозитории
+конкретного образа runner.
 
 ## Production policy
 

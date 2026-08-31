@@ -24,8 +24,8 @@ jobs:
         run: >-
           docker build
           --build-arg VERSION=ci
-          --build-arg VCS_REF=${GITHUB_SHA}
-          --tag family-tree-backend:${GITHUB_SHA}
+          --build-arg VCS_REF="${GITHUB_SHA}"
+          --tag "family-tree-backend:${GITHUB_SHA}"
           .
       - name: Verify runtime contract
         run: |
@@ -56,7 +56,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum
       - name: Verify formatting
         run: |
-          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          unformatted="$(git ls-files -z '*.go' | xargs --null --no-run-if-empty gofmt -l)"
           if [ -n "$unformatted" ]; then
             echo "The following Go files are not formatted:"
             echo "$unformatted"
@@ -102,7 +102,7 @@ jobs:
             --env MINIO_ROOT_USER=family-tree \
             --env MINIO_ROOT_PASSWORD=family-tree-secret \
             minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
-          for attempt in $(seq 1 30); do
+          for _ in {1..30}; do
             if curl --fail --silent http://localhost:9000/minio/health/live >/dev/null; then
               exit 0
             fi
@@ -128,23 +128,18 @@ jobs:
           AWS_SECRET_ACCESS_KEY: family-tree-secret
           AWS_DEFAULT_REGION: ru-central1
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client-17
-          $env:PATH = "/usr/lib/postgresql/17/bin:" + $env:PATH
-
           $env:POSTGRES_URL = $env:SOURCE_POSTGRES_URL
           go run ./cmd/migrate up
           if ($LASTEXITCODE -ne 0) { throw "source migrations failed" }
 
-          $env:PGPASSWORD = "family_tree"
-          psql `
+          docker run --rm --network host --env PGPASSWORD=family_tree --entrypoint psql postgres:17-alpine `
             --host localhost `
             --port 5434 `
             --username family_tree `
             --dbname postgres `
             --command "CREATE DATABASE family_tree_restore"
           if ($LASTEXITCODE -ne 0) { throw "restore database creation failed" }
-          psql `
+          docker run --rm --network host --env PGPASSWORD=family_tree --entrypoint psql postgres:17-alpine `
             --host localhost `
             --port 5434 `
             --username family_tree `
@@ -188,5 +183,6 @@ jobs:
             -TargetBucket family-tree-drill-target `
             -S3Endpoint http://localhost:9000 `
             -S3Region ru-central1 `
-            -PgBinDirectory /usr/lib/postgresql/17/bin `
+            -PostgresClientMode docker `
+            -PostgresClientImage postgres:17-alpine `
             -ConfirmQuiesced

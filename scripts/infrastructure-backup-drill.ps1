@@ -7,16 +7,19 @@ param(
     [string]$S3Endpoint = $env:S3_ENDPOINT,
     [string]$S3Region = $env:S3_REGION,
     [string]$PgBinDirectory = "",
+    [ValidateSet("native", "docker")][string]$PostgresClientMode = "native",
+    [string]$PostgresClientImage = "postgres:17-alpine",
     [switch]$CreateOnly,
     [switch]$ConfirmQuiesced
 )
 
 $ErrorActionPreference = "Stop"
 
-function Get-ToolPath {
+function Get-NativeToolPath {
     param([string]$Name)
 
-    if (-not [string]::IsNullOrWhiteSpace($PgBinDirectory) -and $Name -ne "aws") {
+    if (-not [string]::IsNullOrWhiteSpace($PgBinDirectory) -and
+        $Name -in @("pg_dump", "pg_restore", "psql")) {
         $extension = if ($IsWindows) { ".exe" } else { "" }
         $candidate = Join-Path $PgBinDirectory ($Name + $extension)
         if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
@@ -68,22 +71,50 @@ function Invoke-PostgresTool {
             $values.PGSSLMODE = [System.Uri]::UnescapeDataString($parts[1])
         }
     }
-    $previous = @{}
-    foreach ($name in $values.Keys) {
-        $previous[$name] = [System.Environment]::GetEnvironmentVariable($name, "Process")
-        [System.Environment]::SetEnvironmentVariable($name, [string]$values[$name], "Process")
-    }
-    try {
-        $output = & $Executable @Arguments
-        if ($LASTEXITCODE -ne 0) {
-            throw "PostgreSQL tool failed with exit code $LASTEXITCODE"
-        }
-        return @($output)
-    } finally {
+    if ($PostgresClientMode -eq "docker") {
+        $dockerArguments = @(
+            "run", "--rm", "--network", "host",
+            "--mount", "type=bind,source=$script:BackupRoot,target=/backup"
+        )
         foreach ($name in $values.Keys) {
-            [System.Environment]::SetEnvironmentVariable($name, $previous[$name], "Process")
+            $dockerArguments += "--env"
+            $dockerArguments += ("{0}={1}" -f $name, [string]$values[$name])
+        }
+        $dockerArguments += "--entrypoint"
+        $dockerArguments += $Executable
+        $dockerArguments += $PostgresClientImage
+        $output = & $script:DockerExecutable @dockerArguments @Arguments
+    } else {
+        $previous = @{}
+        foreach ($name in $values.Keys) {
+            $previous[$name] = [System.Environment]::GetEnvironmentVariable($name, "Process")
+            [System.Environment]::SetEnvironmentVariable($name, [string]$values[$name], "Process")
+        }
+        try {
+            $output = & $Executable @Arguments
+        } finally {
+            foreach ($name in $values.Keys) {
+                [System.Environment]::SetEnvironmentVariable($name, $previous[$name], "Process")
+            }
         }
     }
+    if ($LASTEXITCODE -ne 0) {
+        throw "PostgreSQL tool failed with exit code $LASTEXITCODE"
+    }
+    return @($output)
+}
+
+function Get-PostgresClientPath {
+    param([Parameter(Mandatory = $true)][string]$HostPath)
+
+    if ($PostgresClientMode -ne "docker") {
+        return $HostPath
+    }
+    $relativePath = [System.IO.Path]::GetRelativePath($script:BackupRoot, $HostPath)
+    if ($relativePath -eq ".." -or $relativePath.StartsWith(".." + [System.IO.Path]::DirectorySeparatorChar)) {
+        throw "PostgreSQL client path must stay within BackupDirectory"
+    }
+    return "/backup/" + $relativePath.Replace("\", "/")
 }
 
 function Invoke-S3 {
@@ -197,10 +228,23 @@ if (-not $CreateOnly) {
     }
 }
 
-$script:PgDumpExecutable = Get-ToolPath "pg_dump"
-$script:PgRestoreExecutable = Get-ToolPath "pg_restore"
-$script:PsqlExecutable = Get-ToolPath "psql"
-$script:AwsExecutable = Get-ToolPath "aws"
+if ($PostgresClientMode -eq "docker") {
+    if (-not $IsLinux) {
+        throw "PostgresClientMode=docker is supported only on Linux hosts"
+    }
+    if ([string]::IsNullOrWhiteSpace($PostgresClientImage)) {
+        throw "PostgresClientImage is required when PostgresClientMode=docker"
+    }
+    $script:DockerExecutable = Get-NativeToolPath "docker"
+    $script:PgDumpExecutable = "pg_dump"
+    $script:PgRestoreExecutable = "pg_restore"
+    $script:PsqlExecutable = "psql"
+} else {
+    $script:PgDumpExecutable = Get-NativeToolPath "pg_dump"
+    $script:PgRestoreExecutable = Get-NativeToolPath "pg_restore"
+    $script:PsqlExecutable = Get-NativeToolPath "psql"
+}
+$script:AwsExecutable = Get-NativeToolPath "aws"
 if ([string]::IsNullOrWhiteSpace($env:AWS_ACCESS_KEY_ID) -and
     -not [string]::IsNullOrWhiteSpace($env:S3_ACCESS_KEY_ID)) {
     $env:AWS_ACCESS_KEY_ID = $env:S3_ACCESS_KEY_ID
@@ -227,7 +271,9 @@ if (Test-Path -LiteralPath $backupRoot) {
 }
 $objectsRoot = Join-Path $backupRoot "objects"
 New-Item -ItemType Directory -Path $objectsRoot | Out-Null
+$script:BackupRoot = $backupRoot
 $dumpPath = Join-Path $backupRoot "postgres.dump"
+$dumpClientPath = Get-PostgresClientPath $dumpPath
 $manifestPath = Join-Path $backupRoot "manifest.json"
 
 Invoke-S3 @("s3api", "head-bucket", "--bucket", $SourceBucket) | Out-Null
@@ -236,7 +282,7 @@ Invoke-PostgresTool $SourcePostgresURL $script:PgDumpExecutable @(
     "--format=custom",
     "--no-owner",
     "--no-privileges",
-    "--file", $dumpPath
+    "--file", $dumpClientPath
 ) | Out-Null
 $dumpChecksum = (Get-FileHash -Algorithm SHA256 -LiteralPath $dumpPath).Hash.ToLowerInvariant()
 
@@ -321,7 +367,7 @@ Invoke-PostgresTool $TargetPostgresURL $script:PgRestoreExecutable @(
     "--no-owner",
     "--no-privileges",
     "--dbname", ([System.Uri]::new($TargetPostgresURL).AbsolutePath.TrimStart("/")),
-    $dumpPath
+    $dumpClientPath
 ) | Out-Null
 $targetDatabase = Get-DatabaseState $TargetPostgresURL
 if ($targetDatabase.migration_version -ne $sourceDatabase.migration_version) {
